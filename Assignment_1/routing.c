@@ -1,30 +1,72 @@
 #include "routing.h"
 #include <limits.h>
+#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #define streq(str1, str2, n) (strncmp(str1, str2, n) == 0)
 
-edge_t *readTopology(const char *filename, int *N, int *E) {
+edge_t **readTopology(const char *filename, int *N, int *E) {
   FILE *file = fopen(filename, "r");
   if (file == NULL)
     error("Error: Unable to open topology file %s\n");
 
   fscanf(file, "%d %d", N, E);
 
-  edge_t *edges = (edge_t *)malloc((*E) * sizeof(edge_t));
+  edge_t **edges = (edge_t **)malloc((*N) * sizeof(edge_t *));
   if (edges == NULL) {
     fclose(file);
     error("Error: Memory allocation failed\n");
   }
 
+  for (int i = 0; i < *N; i++) {
+    edges[i] = (edge_t *)malloc(sizeof(edge_t));
+    if (edges[i] == NULL) {
+      fclose(file);
+      error("Error: Memory allocation failed\n");
+    }
+  }
+
+  int node1, node2, delay, capacity;
   for (int i = 0; i < *E; i++) {
-    fscanf(file, "%d %d %d %d", &edges[i].node1, &edges[i].node2,
-           &edges[i].delay, &edges[i].capacity);
+    fscanf(file, "%d %d %d %d", &node1, &node2, &delay, &capacity);
+    edges[node1][node2] = (edge_t){node1, node2, delay, capacity, capacity, 0};
+    edges[node2][node1] = (edge_t){node2, node1, delay, capacity, capacity, 0};
   }
 
   fclose(file);
   return edges;
+}
+
+request_t *readRequests(const char *filename, int *R) {
+  FILE *file = fopen(filename, "r");
+  if (file == NULL)
+    error("Error: Unable to open file\n");
+
+  fscanf(file, "%d", R);
+
+  request_t *requests = (request_t *)malloc((*R) * sizeof(request_t));
+  if (requests == NULL) {
+    fclose(file);
+    error("Error: Memory allocation failed\n");
+  }
+
+  for (int i = 0; i < *R; i++) {
+    fscanf(file, "%d %d %d %d %d", &requests[i].source,
+           &requests[i].destination, &requests[i].bMin, &requests[i].bAvg,
+           &requests[i].bMax);
+  }
+
+  fclose(file);
+  return requests;
+}
+
+node_t *initializeNodes(int N) {
+  node_t *nodes = (node_t *)malloc(sizeof(node_t));
+  for (int i = 0; i < N; i++)
+    nodes[i].node = i;
+  return nodes;
 }
 
 int compare(const void *a, const void *b) {
@@ -56,7 +98,8 @@ void printPath(int N, int pred[N][N][2], int source, int destination,
   printf("-> %d ", destination);
 }
 
-void compute2ShortestPaths(edge_t *edges, int N, int E, char *flag) {
+void compute2ShortestPaths(edge_t **edges, int N, int E, char *flag,
+                           int shortestDist[N][N][2], int pred[N][N][2]) {
   int isHop = streq(flag, "hop", 3);
 
   int adjMatrix[N][N];
@@ -64,16 +107,19 @@ void compute2ShortestPaths(edge_t *edges, int N, int E, char *flag) {
     for (int j = 0; j < N; j++)
       adjMatrix[i][j] = INT_MAX;
 
-  for (int i = 0; i < E; i++) {
-    int u = edges[i].node1;
-    int v = edges[i].node2;
-    int cost = isHop ? 1 : edges[i].delay;
-    adjMatrix[u][v] = cost;
-    adjMatrix[v][u] = cost;
+  edge_t *edge = NULL;
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      edge = &edges[i][j];
+      if (edge == NULL)
+        continue;
+      int u = edge->node1;
+      int v = edge->node2;
+      int cost = isHop ? 1 : edge->delay;
+      adjMatrix[u][v] = cost;
+      adjMatrix[v][u] = cost;
+    }
   }
-
-  int shortestDist[N][N][2];
-  int pred[N][N][2];
 
   initializePaths(N, shortestDist, pred);
 
@@ -117,24 +163,94 @@ void compute2ShortestPaths(edge_t *edges, int N, int E, char *flag) {
       }
     }
   }
+}
 
-  for (int u = 0; u < N; u++) {
-    printf("From node %d:\n", u);
-    for (int v = 0; v < N; v++) {
-      if (u != v) {
-        printf("\tTo node %d:\n", v);
-        printf("\t\t1st shortest path: Cost = %d, Path = ",
-               shortestDist[u][v][0]);
-        printPath(N, pred, u, v, 0);
-        printf("\n");
+bool loadRequest(int N, request_t request, int pred[N][N][2], int source,
+                 int destination, edge_t **edges, int pathIndex, int p) {
+  if (destination == source)
+    return true;
 
-        printf("\t\t2nd shortest path: Cost = %d, Path = ",
-               shortestDist[u][v][1]);
-        printPath(N, pred, u, v, 1);
-        printf("\n");
-      }
-    }
+  if (pred[source][destination][pathIndex] == -1)
+    return false;
+
+  int prevDestination = pred[source][destination][pathIndex];
+  edge_t edge = edges[prevDestination][destination];
+  double bandwidth = bandwidthRequirement(request, p);
+  if (edge.availableCapacity < bandwidth)
+    return false;
+
+  bool isValid = loadRequest(N, request, pred, source,
+                             pred[source][destination][pathIndex], edges, 0, p);
+  if (isValid) {
+    edge.availableCapacity -= bandwidth;
+    edge.requests[edge.numRequests++] = request;
   }
+  return isValid;
+}
+
+double bandwidthRequirement(request_t request, int p) {
+  return p == 0 ? fmin(request.bMax,
+                       request.bAvg + 0.35 * (request.bMax - request.bMin))
+                : request.bMax;
+}
+
+void processRequests(int N, node_t *nodes, int pred[N][N][2], edge_t **edges,
+                     request_t *requests, int R, int p) {
+  request_t request;
+  for (int i = 0; i < R; i++) {
+    request = requests[i];
+    bool isShortestPathValid = loadRequest(N, request, pred, request.source,
+                                           request.destination, edges, 0, p);
+    if (isShortestPathValid)
+      continue;
+
+    bool isSecondShortestPathValid = loadRequest(
+        N, request, pred, request.source, request.destination, edges, 1, p);
+    if (!isSecondShortestPathValid)
+      printf("Connection request failed from %d to %d: bandwidth requirement "
+             "not met\n",
+             request.source, request.destination);
+  }
+}
+
+unsigned long hash(char *str) {
+  unsigned long hash = 5381;
+  int c;
+
+  while ((c = *str++))
+    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+  return hash % SIZE;
+}
+
+forward_table_item_t *searchSymbol(char *key,
+                                   forward_table_item_t *hashTable[]) {
+  int hashIndex = hash(key);
+
+  while (hashTable[hashIndex] != NULL) {
+    if (hashTable[hashIndex]->key == hashIndex)
+      return hashTable[hashIndex];
+
+    ++hashIndex;
+    hashIndex %= SIZE;
+  }
+
+  return NULL;
+}
+
+void insertSymbol(char *key, int data, forward_table_item_t *hashTable[]) {
+  int hashIndex = hash(key);
+  forward_table_item_t *item =
+      (forward_table_item_t *)malloc(sizeof(forward_table_item_t));
+  item->nextHop = data;
+  item->key = hashIndex;
+
+  while (hashTable[hashIndex] != NULL) {
+    ++hashIndex;
+    hashIndex %= SIZE;
+  }
+
+  hashTable[hashIndex] = item;
 }
 
 void error(char *message) {
@@ -178,12 +294,17 @@ int main(int argc, char *argv[]) {
   }
 
   int N, E;
-  edge_t *edges = readTopology(topologyFile, &N, &E);
-  for (int i = 0; i < E; i++)
-    printf("edge_t %d: Node1=%d, Node2=%d, Delay=%d, Capacity=%d\n", i + 1,
-           edges[i].node1, edges[i].node2, edges[i].delay, edges[i].capacity);
+  edge_t **edges = readTopology(topologyFile, &N, &E);
 
-  compute2ShortestPaths(edges, N, E, flag);
+  int shortestDist[N][N][2];
+  int pred[N][N][2];
+
+  compute2ShortestPaths(edges, N, E, flag, shortestDist, pred);
+
+  int R;
+  node_t *nodes = initializeNodes(N);
+  request_t *requests = readRequests(connectionsFile, &R);
+  processRequests(N, nodes, pred, edges, requests, R, pValue);
 
   return 0;
 }
