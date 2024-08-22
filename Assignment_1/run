@@ -1,3 +1,3 @@
 gcc routing.c -o routing
 ./routing -top topologyfile -conn connectionsfile -rt routingtablefile \
- -ft forwardingfile -path pathsfile -flag hop -p 1
+ -ft forwardingfile -path pathsfile -flag dist -p 0

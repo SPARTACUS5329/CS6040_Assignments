@@ -10,6 +10,7 @@ typedef struct Request {
   int bMin;
   int bAvg;
   int bMax;
+  int pathIndex;
 } request_t;
 
 typedef struct Edge {
@@ -22,14 +23,11 @@ typedef struct Edge {
   request_t requests[MAX_REQUESTS];
 } edge_t;
 
-typedef struct ForwardTableItem {
-  int nextHop;
-  int key;
-} forward_table_item_t;
-
 typedef struct Node {
   int node;
-  forward_table_item_t *forwardTable[MAX_NODES];
+  int numRequests;
+  int sourceTable[MAX_NODES];
+  int forwardTable[MAX_REQUESTS];
 } node_t;
 
 typedef struct PathNode {
@@ -38,15 +36,17 @@ typedef struct PathNode {
 } path_node_t;
 
 void error(char *);
-edge_t **readTopology(const char *, int *, int *);
+edge_t ***readTopology(const char *, int *, int *);
 request_t *readRequests(const char *filename, int *R);
 int compare(const void *, const void *);
+node_t **initializeNodes(int N);
 void initializePaths(int N, int shortestDist[N][N][2], int pred[N][N][2]);
 void printPath(int N, int pred[N][N][2], int, int, int);
-void compute2ShortestPaths(edge_t **, int N, int, char *,
+void compute2ShortestPaths(edge_t ***, int N, int, char *,
                            int shortestDist[N][N][2], int pred[N][N][2]);
 double bandwidthRequirement(request_t, int);
-bool loadRequest(int N, request_t request, int pred[N][N][2], int source,
-                 int destination, edge_t **edges, int pathIndex, int p);
-void processRequests(int N, node_t *nodes, int pred[N][N][2], edge_t **edges,
+bool loadRequest(int N, request_t request, node_t **nodes, int pred[N][N][2],
+                 int source, int destination, edge_t ***edges, int pathIndex,
+                 int p, int finalDestination);
+void processRequests(int N, node_t **nodes, int pred[N][N][2], edge_t ***edges,
                      request_t *requests, int R, int p);
