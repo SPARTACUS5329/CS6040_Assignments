@@ -201,9 +201,14 @@ bool loadRequest(int N, request_t request, node_t **nodes, int pred[N][N][2],
   node_t *nextHop = nodes[destination];
   if (prevDestination == source) {
     currNode->sourceTable[finalDestination] = nextHop->numRequests++;
+    nextHop->inputNodes[nextHop->numRequests - 1] = currNode->node;
     currNode->numRequests++;
   } else {
+    // currNode->numRequests - 1 is the incoming VCID
+    // nextHop->numRequests is the outgoing VCID
     currNode->forwardTable[currNode->numRequests - 1] = nextHop->numRequests++;
+    currNode->outputNodes[currNode->numRequests - 1] = nextHop->node;
+    nextHop->inputNodes[nextHop->numRequests - 1] = currNode->node;
   }
 
   edge->availableCapacity -= bandwidth;
@@ -405,6 +410,27 @@ void writePathsFile(const char *filename, connection_t **connections,
   fclose(file);
 }
 
+void writeForwardFile(const char *filename, int N, node_t **nodes) {
+  FILE *file = fopen(filename, "w");
+  if (file == NULL)
+    error("Could not open file");
+
+  fprintf(file, "routerID | incomingNode | VCID | outgoingNode | VCID\n");
+  for (int i = 0; i < N; i++) {
+    node_t *node = nodes[i];
+    for (int j = 0; j < node->numRequests; j++) {
+      int incomingVCID = j;
+      int outgoingVCID = node->forwardTable[incomingVCID];
+      int incomingNode = node->inputNodes[incomingVCID];
+      int outgoingNode = node->outputNodes[incomingVCID];
+      fprintf(file, "%d | %d | %d | %d | %d\n", node->node, incomingNode,
+              incomingVCID, outgoingNode, outgoingVCID);
+    }
+  }
+
+  fclose(file);
+}
+
 void error(char *message) {
   perror(message);
   exit(1);
@@ -461,6 +487,7 @@ int main(int argc, char *argv[]) {
       createConnections(N, R, requests, nodes, pred, edges, flag);
   writeRoutingFile(routingTableFile, N, pred, nodes, edges, flag);
   writePathsFile(pathsFile, connections, nodes, R);
+  writeForwardFile(forwardingFile, N, nodes);
 
   return 0;
 }

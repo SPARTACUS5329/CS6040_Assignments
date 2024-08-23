@@ -29,6 +29,8 @@ typedef struct Node {
   int numRequests;
   int sourceTable[MAX_NODES];
   int forwardTable[MAX_REQUESTS];
+  int inputNodes[MAX_REQUESTS];
+  int outputNodes[MAX_REQUESTS];
 } node_t;
 
 typedef struct PathNode {
