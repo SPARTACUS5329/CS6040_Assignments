@@ -40,25 +40,26 @@ edge_t ***readTopology(const char *filename, int *N, int *E) {
   return edges;
 }
 
-request_t *readRequests(const char *filename, int *R) {
+request_t **readRequests(const char *filename, int *R) {
   FILE *file = fopen(filename, "r");
   if (file == NULL)
     error("Error: Unable to open file\n");
 
   fscanf(file, "%d", R);
 
-  request_t *requests = (request_t *)malloc((*R) * sizeof(request_t));
+  request_t **requests = (request_t **)malloc((*R) * sizeof(request_t *));
   if (requests == NULL) {
     fclose(file);
     error("Error: Memory allocation failed\n");
   }
 
   for (int i = 0; i < *R; i++) {
-    fscanf(file, "%d %d %d %d %d", &requests[i].source,
-           &requests[i].destination, &requests[i].bMin, &requests[i].bAvg,
-           &requests[i].bMax);
-    requests[i].pathIndex = -1;
-    requests[i].connected = false;
+    requests[i] = (request_t *)malloc(sizeof(request_t));
+    fscanf(file, "%d %d %d %d %d", &requests[i]->source,
+           &requests[i]->destination, &requests[i]->bMin, &requests[i]->bAvg,
+           &requests[i]->bMax);
+    requests[i]->pathIndex = -1;
+    requests[i]->connected = false;
   }
 
   fclose(file);
@@ -217,57 +218,59 @@ double bandwidthRequirement(request_t request, int p) {
 }
 
 void processRequests(int N, node_t **nodes, int pred[N][N][2], edge_t ***edges,
-                     request_t *requests, int R, int p) {
-  request_t request;
+                     request_t **requests, int R, int p) {
+  request_t *request;
   for (int i = 0; i < R; i++) {
     request = requests[i];
     bool isShortestPathValid =
-        loadRequest(N, request, nodes, pred, request.source,
-                    request.destination, edges, 0, p, request.destination);
+        loadRequest(N, *request, nodes, pred, request->source,
+                    request->destination, edges, 0, p, request->destination);
     if (!isShortestPathValid) {
       bool isSecondShortestPathValid =
-          loadRequest(N, request, nodes, pred, request.source,
-                      request.destination, edges, 1, p, request.destination);
+          loadRequest(N, *request, nodes, pred, request->source,
+                      request->destination, edges, 1, p, request->destination);
       if (!isSecondShortestPathValid) {
-        printf("Connection request failed from %d to %d\n", request.source,
-               request.destination);
-        request.connected = false;
+        printf("Connection request failed from %d to %d\n", request->source,
+               request->destination);
+        request->connected = false;
         continue;
       }
-      request.pathIndex = 1;
+      request->pathIndex = 1;
     } else {
-      request.pathIndex = 0;
+      request->pathIndex = 0;
     }
-    request.connected = true;
+    request->connected = true;
   }
 }
 
-connection_t **createConnections(int N, int R, request_t *requests,
+connection_t **createConnections(int N, int R, request_t **requests,
                                  node_t **nodes, int pred[N][N][2],
                                  edge_t ***edges, char *flag) {
   connection_t **connections =
       (connection_t **)malloc(R * sizeof(connection_t *));
   for (int i = 0; i < R; i++) {
-    request_t request = requests[i];
-    if (!request.connected)
+    request_t *request = requests[i];
+    connections[i] = (connection_t *)malloc(sizeof(connection_t));
+    connections[i]->id = i;
+    connections[i]->request = request;
+    if (!request->connected) {
+      connections[i]->connected = false;
       continue;
+    }
     node_t **path = (node_t **)malloc(N * sizeof(int));
     for (int j = 0; j < N; j++)
       path[j] = (node_t *)malloc(sizeof(node_t));
 
-    int pathLength = getPath(N, pred, request.source, request.destination,
-                             request.pathIndex, path, nodes);
-    connections[i] = (connection_t *)malloc(sizeof(connection_t));
+    int pathLength = getPath(N, pred, request->source, request->destination,
+                             request->pathIndex, path, nodes);
     connection_t *connection = connections[i];
-    connection->id = i;
-    connection->request = &request;
     connection->path = path;
     connection->pathLength = pathLength;
     int pathDelay = 0;
     int pathCost = 0;
     int *vcIDs = (int *)malloc(pathLength * sizeof(int));
-    node_t *prevNode = nodes[request.source];
-    vcIDs[0] = prevNode->sourceTable[request.destination];
+    node_t *prevNode = nodes[request->source];
+    vcIDs[0] = prevNode->sourceTable[request->destination];
     for (int j = 1; j < pathLength; j++) {
       node_t *node = path[j];
       int delay = edges[prevNode->node][node->node]->delay;
@@ -279,6 +282,7 @@ connection_t **createConnections(int N, int R, request_t *requests,
     connection->pathDelay = pathDelay;
     connection->pathCost = pathCost;
     connection->vcIDs = vcIDs;
+    connection->connected = true;
   }
   return connections;
 }
@@ -364,6 +368,43 @@ void writeRoutingFile(const char *filename, int N, int pred[N][N][2],
   fclose(file);
 }
 
+void writePathsFile(const char *filename, connection_t **connections,
+                    node_t **nodes, int R) {
+  FILE *file = fopen(filename, "w");
+  if (file == NULL)
+    error("Could not open file");
+
+  fprintf(file, "connectionID | sourceNode | destinationNode | Path | VC ID "
+                "List | pathCost\n");
+  for (int i = 0; i < R; i++) {
+    connection_t *connection = connections[i];
+    if (!connection->connected)
+      continue;
+
+    node_t *sourceNode = nodes[connection->request->source];
+    node_t *destinationNode = nodes[connection->request->destination];
+    fprintf(file, "%d | %d | %d | ", connection->id, sourceNode->node,
+            destinationNode->node);
+    node_t **path = connection->path;
+    int pathLength = connection->pathLength;
+    for (int j = 0; j < pathLength; j++) {
+      fprintf(file, "%d", path[j]->node);
+      if (j < pathLength - 1)
+        fprintf(file, "->");
+    }
+    fprintf(file, " | ");
+
+    int *vcIDs = connection->vcIDs;
+    for (int j = 0; j < pathLength; j++) {
+      fprintf(file, "%d", vcIDs[j]);
+      if (j < pathLength - 1)
+        fprintf(file, ",");
+    }
+    fprintf(file, " | %d\n", connection->pathCost);
+  }
+  fclose(file);
+}
+
 void error(char *message) {
   perror(message);
   exit(1);
@@ -414,10 +455,12 @@ int main(int argc, char *argv[]) {
 
   int R;
   node_t **nodes = initializeNodes(N);
-  request_t *requests = readRequests(connectionsFile, &R);
+  request_t **requests = readRequests(connectionsFile, &R);
   processRequests(N, nodes, pred, edges, requests, R, pValue);
-  createConnections(N, R, requests, nodes, pred, edges, flag);
+  connection_t **connections =
+      createConnections(N, R, requests, nodes, pred, edges, flag);
   writeRoutingFile(routingTableFile, N, pred, nodes, edges, flag);
+  writePathsFile(pathsFile, connections, nodes, R);
 
   return 0;
 }

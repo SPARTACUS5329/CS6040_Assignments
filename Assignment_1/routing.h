@@ -38,6 +38,7 @@ typedef struct PathNode {
 
 typedef struct Connection {
   int id;
+  bool connected;
   int *vcIDs;
   int pathCost;
   int pathDelay;
@@ -48,7 +49,7 @@ typedef struct Connection {
 
 void error(char *);
 edge_t ***readTopology(const char *, int *, int *);
-request_t *readRequests(const char *filename, int *R);
+request_t **readRequests(const char *filename, int *R);
 int compare(const void *, const void *);
 node_t **initializeNodes(int N);
 void initializePaths(int N, int shortestDist[N][N][2], int pred[N][N][2]);
@@ -61,7 +62,11 @@ bool loadRequest(int N, request_t request, node_t **nodes, int pred[N][N][2],
                  int source, int destination, edge_t ***edges, int pathIndex,
                  int p, int finalDestination);
 void processRequests(int N, node_t **nodes, int pred[N][N][2], edge_t ***edges,
-                     request_t *requests, int R, int p);
-connection_t **createConnections(int N, int R, request_t *requests,
+                     request_t **requests, int R, int p);
+connection_t **createConnections(int N, int R, request_t **requests,
                                  node_t **nodes, int pred[N][N][2],
                                  edge_t ***edges, char *flag);
+void writeRoutingFile(const char *filename, int N, int pred[N][N][2],
+                      node_t **nodes, edge_t ***edges, char *flag);
+void writePathsFile(const char *filename, connection_t **connections,
+                    node_t **nodes, int R);
