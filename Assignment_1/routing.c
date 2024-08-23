@@ -58,6 +58,7 @@ request_t *readRequests(const char *filename, int *R) {
            &requests[i].destination, &requests[i].bMin, &requests[i].bAvg,
            &requests[i].bMax);
     requests[i].pathIndex = -1;
+    requests[i].connected = false;
   }
 
   fclose(file);
@@ -88,18 +89,24 @@ void initializePaths(int N, int shortestDist[N][N][2], int pred[N][N][2]) {
   }
 }
 
-void printPath(int N, int pred[N][N][2], int source, int destination,
-               int pathIndex) {
+int getPath(int N, int pred[N][N][2], int source, int destination,
+            int pathIndex, node_t **path, node_t **nodes) {
   if (destination == source) {
-    printf("%d ", source);
-    return;
+    path[0] = nodes[source];
+    return 1;
   }
-  if (pred[source][destination][pathIndex] == -1) {
-    printf("No path");
-    return;
-  }
-  printPath(N, pred, source, pred[source][destination][pathIndex], 0);
-  printf("-> %d ", destination);
+
+  if (pred[source][destination][pathIndex] == -1)
+    return -1;
+
+  int pathLength = getPath(
+      N, pred, source, pred[source][destination][pathIndex], 0, path, nodes);
+
+  if (pathLength == -1)
+    return -1;
+
+  path[pathLength] = nodes[destination];
+  return pathLength + 1;
 }
 
 void compute2ShortestPaths(edge_t ***edges, int N, int E, char *flag,
@@ -224,13 +231,58 @@ void processRequests(int N, node_t **nodes, int pred[N][N][2], edge_t ***edges,
       if (!isSecondShortestPathValid) {
         printf("Connection request failed from %d to %d\n", request.source,
                request.destination);
+        request.connected = false;
         continue;
       }
       request.pathIndex = 1;
     } else {
       request.pathIndex = 0;
     }
+    request.connected = true;
   }
+}
+
+connection_t **createConnections(int N, int R, request_t *requests,
+                                 node_t **nodes, int pred[N][N][2],
+                                 edge_t ***edges, char *flag) {
+  connection_t **connections =
+      (connection_t **)malloc(R * sizeof(connection_t *));
+  for (int i = 0; i < R; i++) {
+    request_t request = requests[i];
+    if (!request.connected)
+      continue;
+    node_t **path = (node_t **)malloc(N * sizeof(int));
+    for (int j = 0; j < N; j++)
+      path[j] = (node_t *)malloc(sizeof(node_t));
+
+    int pathLength = getPath(N, pred, request.source, request.destination,
+                             request.pathIndex, path, nodes);
+    connections[i] = (connection_t *)malloc(sizeof(connection_t));
+    connection_t *connection = connections[i];
+    connection->id = i;
+    connection->request = &request;
+    connection->path = path;
+    connection->pathLength = pathLength;
+    int pathDelay = 0;
+    int pathCost = 0;
+    int *vcIDs = (int *)malloc(pathLength * sizeof(int));
+    node_t *prevNode = nodes[request.source];
+    vcIDs[0] = prevNode->sourceTable[request.destination];
+    for (int j = 0; j < pathLength; j++) {
+      node_t *node = path[j];
+      int delay = edges[prevNode->node][node->node]->delay;
+      pathDelay += delay;
+      pathCost += streq(flag, "hop", 3) ? 1 : delay;
+      prevNode = node;
+      if (j == 0)
+        continue;
+      vcIDs[j] = node->forwardTable[vcIDs[j - 1]];
+    }
+    connection->pathDelay = pathDelay;
+    connection->pathCost = pathCost;
+    connection->vcIDs = vcIDs;
+  }
+  return connections;
 }
 
 void error(char *message) {
@@ -285,24 +337,7 @@ int main(int argc, char *argv[]) {
   node_t **nodes = initializeNodes(N);
   request_t *requests = readRequests(connectionsFile, &R);
   processRequests(N, nodes, pred, edges, requests, R, pValue);
-
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < N; j++) {
-      edge_t *edge = edges[i][j];
-      if (edge == NULL)
-        continue;
-      printf("(%d, %d) Available: %f\tTotal: %d\n", i, j,
-             edge->availableCapacity, edge->totalCapacity);
-    }
-  }
-
-  for (int i = 0; i < N; i++) {
-    node_t *node = nodes[i];
-    printf("%d: %d\n", i, node->numRequests);
-    for (int j = 0; j < node->numRequests; j++) {
-      printf("\t%d %d\n", j, node->forwardTable[j]);
-    }
-  }
+  createConnections(N, R, requests, nodes, pred, edges, flag);
 
   return 0;
 }
