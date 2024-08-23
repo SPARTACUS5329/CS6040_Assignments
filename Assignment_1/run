@@ -1,3 +1,3 @@
 gcc routing.c -o routing
-./routing -top topologyfile -conn connectionsfile -rt routingtablefile \
+./routing -top NSFNETtopologyfile -conn NSFNETconnectionsfile -rt routingtablefile \
  -ft forwardingfile -path pathsfile -flag hop -p 0
