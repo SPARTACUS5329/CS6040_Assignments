@@ -268,14 +268,12 @@ connection_t **createConnections(int N, int R, request_t *requests,
     int *vcIDs = (int *)malloc(pathLength * sizeof(int));
     node_t *prevNode = nodes[request.source];
     vcIDs[0] = prevNode->sourceTable[request.destination];
-    for (int j = 0; j < pathLength; j++) {
+    for (int j = 1; j < pathLength; j++) {
       node_t *node = path[j];
       int delay = edges[prevNode->node][node->node]->delay;
       pathDelay += delay;
       pathCost += streq(flag, "hop", 3) ? 1 : delay;
       prevNode = node;
-      if (j == 0)
-        continue;
       vcIDs[j] = node->forwardTable[vcIDs[j - 1]];
     }
     connection->pathDelay = pathDelay;
@@ -283,6 +281,87 @@ connection_t **createConnections(int N, int R, request_t *requests,
     connection->vcIDs = vcIDs;
   }
   return connections;
+}
+
+void writeRoutingFile(const char *filename, int N, int pred[N][N][2],
+                      node_t **nodes, edge_t ***edges, char *flag) {
+  FILE *file = fopen(filename, "w");
+  if (file == NULL)
+    error("Could not open file");
+
+  fprintf(file, "sourceNode | destinationNode | pathIndex | path | pathDelay | "
+                "pathCost\n");
+
+  for (int i = 0; i < N; i++) {
+    node_t *sourceNode = nodes[i];
+    for (int j = 0; j < N; j++) {
+      if (i == j)
+        continue;
+      node_t *destinationNode = nodes[j];
+
+      node_t **shortestPath = (node_t **)malloc(N * sizeof(int));
+      node_t **secondShortestPath = (node_t **)malloc(N * sizeof(int));
+      for (int k = 0; k < N; k++)
+        shortestPath[k] = (node_t *)malloc(sizeof(node_t));
+      for (int k = 0; k < N; k++)
+        secondShortestPath[k] = (node_t *)malloc(sizeof(node_t));
+
+      int shortestPathLength =
+          getPath(N, pred, sourceNode->node, destinationNode->node, 0,
+                  shortestPath, nodes);
+      if (shortestPathLength == -1)
+        continue;
+      int shortestPathDelay = 0;
+      int shortestPathCost = 0;
+      node_t *prevNode = nodes[sourceNode->node];
+      for (int k = 1; k < shortestPathLength; k++) {
+        node_t *node = shortestPath[k];
+        int delay = edges[prevNode->node][node->node]->delay;
+        shortestPathDelay += delay;
+        shortestPathCost += streq(flag, "hop", 3) ? 1 : delay;
+        prevNode = node;
+      }
+
+      fprintf(file, "%d | %d | %d | ", sourceNode->node, destinationNode->node,
+              0);
+      for (int k = 0; k < shortestPathLength; k++) {
+        fprintf(file, "%d", shortestPath[k]->node);
+        if (k < shortestPathLength - 1)
+          fprintf(file, "->");
+      }
+
+      fprintf(file, " | %d | %d\n", shortestPathDelay, shortestPathCost);
+
+      int secondShortestPathLength =
+          getPath(N, pred, sourceNode->node, destinationNode->node, 1,
+                  secondShortestPath, nodes);
+      if (secondShortestPathLength == -1)
+        continue;
+      int secondShortestPathDelay = 0;
+      int secondShortestPathCost = 0;
+      prevNode = nodes[sourceNode->node];
+      for (int k = 1; k < secondShortestPathLength; k++) {
+        node_t *node = secondShortestPath[k];
+        int delay = edges[prevNode->node][node->node]->delay;
+        secondShortestPathDelay += delay;
+        secondShortestPathCost += streq(flag, "hop", 3) ? 1 : delay;
+        prevNode = node;
+      }
+
+      fprintf(file, "%d | %d | %d | ", sourceNode->node, destinationNode->node,
+              1);
+      for (int k = 0; k < secondShortestPathLength; k++) {
+        fprintf(file, "%d", secondShortestPath[k]->node);
+        if (k < secondShortestPathLength - 1)
+          fprintf(file, "->");
+      }
+
+      fprintf(file, " | %d | %d\n", secondShortestPathDelay,
+              secondShortestPathCost);
+    }
+  }
+
+  fclose(file);
 }
 
 void error(char *message) {
@@ -338,6 +417,7 @@ int main(int argc, char *argv[]) {
   request_t *requests = readRequests(connectionsFile, &R);
   processRequests(N, nodes, pred, edges, requests, R, pValue);
   createConnections(N, R, requests, nodes, pred, edges, flag);
+  writeRoutingFile(routingTableFile, N, pred, nodes, edges, flag);
 
   return 0;
 }
