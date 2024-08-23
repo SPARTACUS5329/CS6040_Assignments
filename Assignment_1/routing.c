@@ -379,6 +379,12 @@ void writePathsFile(const char *filename, connection_t **connections,
   if (file == NULL)
     error("Could not open file");
 
+  int admittedConnections = 0;
+  for (int i = 0; i < R; i++)
+    if (connections[i]->connected)
+      admittedConnections++;
+
+  fprintf(file, "%d %d\n", R, admittedConnections);
   fprintf(file, "connectionID | sourceNode | destinationNode | Path | VC ID "
                 "List | pathCost\n");
   for (int i = 0; i < R; i++) {
