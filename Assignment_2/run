@@ -1,0 +1,2 @@
+gcc main.c -o program2
+./program2 -in inputfile -sw Omega
