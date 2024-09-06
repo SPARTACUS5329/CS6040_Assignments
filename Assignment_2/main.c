@@ -1,5 +1,6 @@
 #include "main.h"
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,11 +24,12 @@ int *readInputFile(const char *filename, int *N, int *A) {
   return requests;
 }
 
-input_t **initializeInputs(int N, int M, switch_t ***switches) {
+input_t **initializeInputs(int N, int M, switch_t ***switches, char *sw) {
+  bool isBenes = (bool)streq(sw, "Benes", 5);
   input_t **inputs = (input_t **)malloc(N * sizeof(input_t *));
   for (int i = 0; i < N; i++) {
     input_t *input = (input_t *)malloc(sizeof(switch_t));
-    int firstSwitchPort = circularLeftShift(i, 1, M);
+    int firstSwitchPort = isBenes ? i : circularLeftShift(i, 1, M);
     int firstSwitchRow = firstSwitchPort / 2;
     int firstSwitchCol = 0;
 
@@ -38,6 +40,78 @@ input_t **initializeInputs(int N, int M, switch_t ***switches) {
     inputs[i] = input;
   }
   return inputs;
+}
+
+void connectOmega(int upPort, int downPort, int M, switch_t ***switches,
+                  int col, switch_t *currSwitch) {
+
+  int upPrevPort = circularRightShift(upPort, 1, M);
+  int downPrevPort = circularRightShift(downPort, 1, M);
+
+  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+}
+
+void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
+                  int col, switch_t *currSwitch) {
+  bool isFirstConnection = col == 1;
+  bool isUpperHalf = upPort < N / 2;
+  int upPrevPort, downPrevPort;
+  if (isFirstConnection && isUpperHalf) {
+    upPrevPort = upPort;
+    downPrevPort =
+        (downPort + N / 2) - 1;        // offset by N / 2 and switch down -> up
+  } else if (isFirstConnection) {      // lower half in first connection
+    upPrevPort = (upPort - N / 2) + 1; // offset by N / 2 and switch up -> down
+    downPrevPort = downPort;
+  } else if (upPort % 4 == 0) {
+    upPrevPort = upPort;
+    downPrevPort = downPort + 1;
+  } else {
+    upPrevPort = upPort - 1;
+    downPrevPort = downPort;
+  }
+  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+}
+
+void connectBenes(int upPort, int downPort, int N, int M, switch_t ***switches,
+                  int col, switch_t *currSwitch) {
+  bool isMeshConnection = col == 1 || col == M - 1;
+  bool isUpperHalf = upPort < N / 2;
+  int upPrevPort, downPrevPort;
+  if (isMeshConnection && isUpperHalf) {
+    upPrevPort = upPort;
+    downPrevPort =
+        (downPort + N / 2) - 1;        // offset by N / 2 and switch down -> up
+  } else if (isMeshConnection) {       // lower half in first connection
+    upPrevPort = (upPort - N / 2) + 1; // offset by N / 2 and switch up -> down
+    downPrevPort = downPort;
+  } else if (upPort % 4 == 0) {
+    upPrevPort = upPort;
+    downPrevPort = downPort + 1;
+  } else {
+    upPrevPort = upPort - 1;
+    downPrevPort = downPort;
+  }
+  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+}
+
+void connectSwitches(switch_t ***switches, int upPrevPort, int downPrevPort,
+                     int col, switch_t *currSwitch) {
+  int upPrevSwitchRow = upPrevPort / 2;
+  int downPrevSwitchRow = downPrevPort / 2;
+
+  currSwitch->upIn = switches[upPrevSwitchRow][col - 1];
+  currSwitch->downIn = switches[downPrevSwitchRow][col - 1];
+
+  if (upPrevSwitchRow % 2)
+    switches[upPrevSwitchRow][col - 1]->downOut = currSwitch;
+  else
+    switches[upPrevSwitchRow][col - 1]->upOut = currSwitch;
+
+  if (downPrevSwitchRow % 2)
+    switches[downPrevSwitchRow][col - 1]->downOut = currSwitch;
+  else
+    switches[downPrevSwitchRow][col - 1]->upOut = currSwitch;
 }
 
 switch_t ***initializeSwitches(int N, int M,
@@ -57,23 +131,12 @@ switch_t ***initializeSwitches(int N, int M,
       uint32_t downPort = upPort + 1;
 
       if (j != 0) {
-        int upPrevPort = circularRightShift(upPort, 1, M);
-        int downPrevPort = circularRightShift(downPort, 1, M);
-        int upPrevSwitchRow = upPrevPort / 2;
-        int downPrevSwitchRow = downPrevPort / 2;
-
-        currSwitch->upIn = switches[upPrevSwitchRow][j - 1];
-        currSwitch->downIn = switches[downPrevSwitchRow][j - 1];
-
-        if (upPrevSwitchRow % 2)
-          switches[upPrevSwitchRow][j - 1]->downOut = currSwitch;
-        else
-          switches[upPrevSwitchRow][j - 1]->upOut = currSwitch;
-
-        if (downPrevSwitchRow % 2)
-          switches[downPrevSwitchRow][j - 1]->downOut = currSwitch;
-        else
-          switches[downPrevSwitchRow][j - 1]->upOut = currSwitch;
+        if (streq(sw, "Omega", 5))
+          connectOmega(upPort, downPort, M, switches, j, currSwitch);
+        if (streq(sw, "Delta", 5))
+          connectDelta(upPort, downPort, N, M, switches, j, currSwitch);
+        if (streq(sw, "Benes", 5))
+          connectOmega(upPort, downPort, M, switches, j, currSwitch);
       }
       switches[i][j] = currSwitch;
     }
@@ -118,7 +181,13 @@ int main(int argc, char *argv[]) {
 
   int N, A;
   int *requests = readInputFile(inputFile, &N, &A);
-  int M = log2(N);
+  int M;
+
+  if (streq(sw, "Omega", 5) || streq(sw, "Delta", 5))
+    M = log2(N);
+  else
+    M = 2 * log2(N) - 1;
+
   switch_t ***switches = initializeSwitches(N / 2, M, sw);
-  input_t **inputs = initializeInputs(N, M, switches);
+  input_t **inputs = initializeInputs(N, M, switches, sw);
 }
