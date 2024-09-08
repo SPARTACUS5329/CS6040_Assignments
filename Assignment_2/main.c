@@ -54,16 +54,15 @@ void connectOmega(int upPort, int downPort, int M, switch_t ***switches,
 }
 
 void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
-                  int col, switch_t *currSwitch) {
+                  int col, switch_t *currSwitch) { // N is switches, M is stages
   bool isFirstConnection = col == 1;
-  bool isUpperHalf = upPort < N / 2;
+  bool isUpperHalf = upPort <= N / 2;
   int upPrevPort, downPrevPort;
   if (isFirstConnection && isUpperHalf) {
     upPrevPort = upPort;
-    downPrevPort =
-        (downPort + N / 2) - 1;        // offset by N / 2 and switch down -> up
+    downPrevPort = (downPort + N) - 1; // offset by N and switch down -> up
   } else if (isFirstConnection) {      // lower half in first connection
-    upPrevPort = (upPort - N / 2) + 1; // offset by N / 2 and switch up -> down
+    upPrevPort = (upPort - N) + 1;     // offset by N and switch up -> down
     downPrevPort = downPort;
   } else if (upPort % 4 == 0) {
     upPrevPort = upPort;
@@ -252,8 +251,7 @@ int main(int argc, char *argv[]) {
     selfRoutePackets(N, A, M, switches, packets, inputs);
   for (int i = 0; i < N / 2; i++) {
     for (int j = 0; j < M; j++) {
-      switch_t *currSwitch = switches[i][j];
-      printf("%c ", currSwitch->config);
+      printf("%c ", switches[i][j]->config);
     }
     printf("\n");
   }
