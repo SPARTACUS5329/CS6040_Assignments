@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdlib.h>
 
 typedef struct Switch {
@@ -6,6 +7,11 @@ typedef struct Switch {
   int id;
   int row;
   int col;
+  bool hasPacket;
+  int upInPort;
+  int upOutPort;
+  int downInPort;
+  int downOutPort;
   struct Switch *upIn;
   struct Switch *upOut;
   struct Switch *downIn;
@@ -15,6 +21,7 @@ typedef struct Switch {
 typedef struct Input {
   int id;
   char position;
+  int firstSwitchPort;
   struct Switch *firstSwitch;
 } input_t;
 
@@ -28,5 +35,9 @@ void connectOmega(int upPort, int downPort, int M, switch_t ***switches,
                   int col, switch_t *currSwitch);
 void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
                   int col, switch_t *currSwitch);
-void connectSwitches(switch_t ***switches, int upPrevPort, int downPrevPort,
-                     int col, switch_t *currSwitch);
+void connectSwitches(switch_t ***switches, int upPort, int downPort,
+                     int upPrevPort, int downPrevPort, int col,
+                     switch_t *currSwitch);
+void selfRoutePackets(int N, int A, int M, switch_t ***switches, int *packets,
+                      input_t **inputs);
+char isSwitchInContention(switch_t *currSwitch, int currPort, int dest);

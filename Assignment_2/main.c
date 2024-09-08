@@ -35,6 +35,7 @@ input_t **initializeInputs(int N, int M, switch_t ***switches, char *sw) {
 
     switch_t *firstSwitch = switches[firstSwitchRow][firstSwitchCol];
     input->firstSwitch = firstSwitch;
+    input->firstSwitchPort = firstSwitchPort;
 
     input->id = i;
     inputs[i] = input;
@@ -48,7 +49,8 @@ void connectOmega(int upPort, int downPort, int M, switch_t ***switches,
   int upPrevPort = circularRightShift(upPort, 1, M);
   int downPrevPort = circularRightShift(downPort, 1, M);
 
-  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+  connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
+                  currSwitch);
 }
 
 void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
@@ -70,7 +72,8 @@ void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
     upPrevPort = upPort - 1;
     downPrevPort = downPort;
   }
-  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+  connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
+                  currSwitch);
 }
 
 void connectBenes(int upPort, int downPort, int N, int M, switch_t ***switches,
@@ -92,26 +95,77 @@ void connectBenes(int upPort, int downPort, int N, int M, switch_t ***switches,
     upPrevPort = upPort - 1;
     downPrevPort = downPort;
   }
-  connectSwitches(switches, upPrevPort, downPrevPort, col, currSwitch);
+  connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
+                  currSwitch);
 }
 
-void connectSwitches(switch_t ***switches, int upPrevPort, int downPrevPort,
-                     int col, switch_t *currSwitch) {
+void connectSwitches(switch_t ***switches, int upPort, int downPort,
+                     int upPrevPort, int downPrevPort, int col,
+                     switch_t *currSwitch) {
   int upPrevSwitchRow = upPrevPort / 2;
   int downPrevSwitchRow = downPrevPort / 2;
 
   currSwitch->upIn = switches[upPrevSwitchRow][col - 1];
+  currSwitch->upInPort = upPrevPort;
   currSwitch->downIn = switches[downPrevSwitchRow][col - 1];
+  currSwitch->downInPort = downPrevPort;
 
-  if (upPrevSwitchRow % 2)
+  if (upPrevPort % 2) {
     switches[upPrevSwitchRow][col - 1]->downOut = currSwitch;
-  else
+    switches[upPrevSwitchRow][col - 1]->downOutPort = upPort;
+  } else {
     switches[upPrevSwitchRow][col - 1]->upOut = currSwitch;
+    switches[upPrevSwitchRow][col - 1]->upOutPort = upPort;
+  }
 
-  if (downPrevSwitchRow % 2)
+  if (downPrevPort % 2) {
     switches[downPrevSwitchRow][col - 1]->downOut = currSwitch;
-  else
+    switches[downPrevSwitchRow][col - 1]->downOutPort = downPort;
+  } else {
     switches[downPrevSwitchRow][col - 1]->upOut = currSwitch;
+    switches[downPrevSwitchRow][col - 1]->upOutPort = downPort;
+  }
+}
+
+void selfRoutePackets(int N, int A, int M, switch_t ***switches, int *packets,
+                      input_t **inputs) {
+  for (int i = 0; i < A; i++) {
+    int packet = packets[i];
+    input_t *input = inputs[i];
+    switch_t *currSwitch = input->firstSwitch;
+    int currPort = input->firstSwitchPort;
+    for (int m = 0; m < M; m++) {
+      int kBit = (packet >> (M - 1 - m)) & 1;
+      switch (kBit) {
+      case 1:
+        currSwitch->config = isSwitchInContention(currSwitch, currPort, 1);
+        currPort = currSwitch->downOutPort;
+        currSwitch = currSwitch->downOut;
+        break;
+      case 0:
+        currSwitch->config = isSwitchInContention(currSwitch, currPort, 0);
+        currPort = currSwitch->upOutPort;
+        currSwitch = currSwitch->upOut;
+        break;
+      }
+    }
+  }
+}
+
+char isSwitchInContention(switch_t *currSwitch, int currPort, int dest) {
+  if (!currSwitch->hasPacket) {
+    currSwitch->hasPacket = true;
+    return currPort % 2 == dest ? 'T' : 'C';
+  }
+  if (currSwitch->config == 'T') {
+    if (currPort % 2 == dest)
+      return 'T';
+    error("Switch contention");
+  }
+  if (currPort % 2 != dest)
+    return 'C';
+  error("Switch contention");
+  return '\0'; // because the linter is not happy
 }
 
 switch_t ***initializeSwitches(int N, int M,
@@ -121,7 +175,7 @@ switch_t ***initializeSwitches(int N, int M,
   for (int j = 0; j < M; j++) {
     for (int i = 0; i < N; i++) {
       if (j == 0)
-        switches[i] = (switch_t **)malloc(sizeof(switch_t *));
+        switches[i] = (switch_t **)malloc(M * sizeof(switch_t *));
       switch_t *currSwitch = (switch_t *)malloc(sizeof(switch_t));
       currSwitch->id = currID++;
       currSwitch->row = i;
@@ -130,14 +184,17 @@ switch_t ***initializeSwitches(int N, int M,
       uint32_t upPort = 2 * i;
       uint32_t downPort = upPort + 1;
 
-      if (j != 0) {
-        if (streq(sw, "Omega", 5))
-          connectOmega(upPort, downPort, M, switches, j, currSwitch);
-        if (streq(sw, "Delta", 5))
-          connectDelta(upPort, downPort, N, M, switches, j, currSwitch);
-        if (streq(sw, "Benes", 5))
-          connectOmega(upPort, downPort, M, switches, j, currSwitch);
-      }
+      if (j == 0)
+        goto addSwitch;
+
+      if (streq(sw, "Omega", 5))
+        connectOmega(upPort, downPort, M, switches, j, currSwitch);
+      if (streq(sw, "Delta", 5))
+        connectDelta(upPort, downPort, N, M, switches, j, currSwitch);
+      if (streq(sw, "Benes", 5))
+        connectOmega(upPort, downPort, M, switches, j, currSwitch);
+
+    addSwitch:
       switches[i][j] = currSwitch;
     }
   }
@@ -180,14 +237,24 @@ int main(int argc, char *argv[]) {
   }
 
   int N, A;
-  int *requests = readInputFile(inputFile, &N, &A);
+  int *packets = readInputFile(inputFile, &N, &A);
   int M;
+  bool isBenes = streq(sw, "Benes", 5);
 
-  if (streq(sw, "Omega", 5) || streq(sw, "Delta", 5))
-    M = log2(N);
-  else
+  if (isBenes)
     M = 2 * log2(N) - 1;
+  else
+    M = log2(N);
 
   switch_t ***switches = initializeSwitches(N / 2, M, sw);
   input_t **inputs = initializeInputs(N, M, switches, sw);
+  if (!isBenes)
+    selfRoutePackets(N, A, M, switches, packets, inputs);
+  for (int i = 0; i < N / 2; i++) {
+    for (int j = 0; j < M; j++) {
+      switch_t *currSwitch = switches[i][j];
+      printf("%c ", currSwitch->config);
+    }
+    printf("\n");
+  }
 }
