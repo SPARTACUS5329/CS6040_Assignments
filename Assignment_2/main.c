@@ -7,6 +7,8 @@
 #include <string.h>
 #define streq(str1, str2, n) (strncmp(str1, str2, n) == 0)
 
+static int bitWidth;
+
 int *readInputFile(const char *filename, int *N, int *A) {
   FILE *file = fopen(filename, "r");
   if (file == NULL)
@@ -29,7 +31,7 @@ input_t **initializeInputs(int N, int M, switch_t ***switches, char *sw) {
   input_t **inputs = (input_t **)malloc(N * sizeof(input_t *));
   for (int i = 0; i < N; i++) {
     input_t *input = (input_t *)malloc(sizeof(switch_t));
-    int firstSwitchPort = isBenes ? i : circularLeftShift(i, 1, M);
+    int firstSwitchPort = isBenes ? i : circularLeftShift(i, 1, bitWidth);
     int firstSwitchRow = firstSwitchPort / 2;
     int firstSwitchCol = 0;
 
@@ -46,15 +48,15 @@ input_t **initializeInputs(int N, int M, switch_t ***switches, char *sw) {
 void connectOmega(int upPort, int downPort, int M, switch_t ***switches,
                   int col, switch_t *currSwitch) {
 
-  int upPrevPort = circularRightShift(upPort, 1, M);
-  int downPrevPort = circularRightShift(downPort, 1, M);
+  int upPrevPort = circularRightShift(upPort, 1, bitWidth);
+  int downPrevPort = circularRightShift(downPort, 1, bitWidth);
 
   connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
                   currSwitch);
 }
 
 void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
-                  int col, switch_t *currSwitch) { // N is switches, M is stages
+                  int col, switch_t *currSwitch) { // N switches, M stages
   bool isFirstConnection = col == 1;
   bool isUpperHalf = upPort <= N / 2;
   int upPrevPort, downPrevPort;
@@ -71,22 +73,23 @@ void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
     upPrevPort = upPort - 1;
     downPrevPort = downPort;
   }
+
   connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
                   currSwitch);
 }
 
-void connectBenes(int upPort, int downPort, int N, int M, switch_t ***switches,
+void connectBenes(int upPort, int downPort, int M, switch_t ***switches,
                   int col, switch_t *currSwitch) {
-  bool isMeshConnection = col == 1 || col == M - 1;
-  bool isUpperHalf = upPort < N / 2;
+  bool isFirstConnection = col == 1;
+  bool isLastConnection = col == M - 1;
+
   int upPrevPort, downPrevPort;
-  if (isMeshConnection && isUpperHalf) {
-    upPrevPort = upPort;
-    downPrevPort =
-        (downPort + N / 2) - 1;        // offset by N / 2 and switch down -> up
-  } else if (isMeshConnection) {       // lower half in first connection
-    upPrevPort = (upPort - N / 2) + 1; // offset by N / 2 and switch up -> down
-    downPrevPort = downPort;
+  if (isFirstConnection) {
+    upPrevPort = circularLeftShift(upPort, 1, bitWidth);
+    downPrevPort = circularLeftShift(downPort, 1, bitWidth);
+  } else if (isLastConnection) {
+    upPrevPort = circularRightShift(upPort, 1, bitWidth);
+    downPrevPort = circularRightShift(downPort, 1, bitWidth);
   } else if (upPort % 4 == 0) {
     upPrevPort = upPort;
     downPrevPort = downPort + 1;
@@ -94,6 +97,7 @@ void connectBenes(int upPort, int downPort, int N, int M, switch_t ***switches,
     upPrevPort = upPort - 1;
     downPrevPort = downPort;
   }
+
   connectSwitches(switches, upPort, downPort, upPrevPort, downPrevPort, col,
                   currSwitch);
 }
@@ -126,8 +130,7 @@ void connectSwitches(switch_t ***switches, int upPort, int downPort,
   }
 }
 
-void selfRoutePackets(int N, int A, int M, switch_t ***switches, int *packets,
-                      input_t **inputs) {
+void selfRoutePackets(int A, int M, int *packets, input_t **inputs) {
   for (int i = 0; i < A; i++) {
     int packet = packets[i];
     input_t *input = inputs[i];
@@ -148,6 +151,58 @@ void selfRoutePackets(int N, int A, int M, switch_t ***switches, int *packets,
         break;
       }
     }
+  }
+}
+
+bool helperBenes(int m, int currPort, int destPort, switch_t *currSwitch) {
+  if (m == 1) {
+    if (currSwitch->upPort != destPort && currSwitch->downPort != destPort)
+      return false;
+
+    char requiredConfig = currPort == destPort ? 'T' : 'C';
+    if (currSwitch->hasPacket && currSwitch->config != requiredConfig)
+      return false;
+
+    currSwitch->config = requiredConfig;
+    currSwitch->hasPacket = true;
+    return true;
+  }
+
+  bool isUpValid =
+      !currSwitch->hasPacket ||
+      (currSwitch->config == 'T' && currPort == currSwitch->upPort) ||
+      (currSwitch->config == 'C' && currPort == currSwitch->downPort);
+  bool isDownValid =
+      !currSwitch->hasPacket ||
+      (currSwitch->config == 'T' && currPort == currSwitch->downPort) ||
+      (currSwitch->config == 'C' && currPort == currSwitch->upPort);
+
+  if (isUpValid &&
+      helperBenes(m - 1, currSwitch->upOutPort, destPort, currSwitch->upOut)) {
+    currSwitch->config = currPort == currSwitch->upPort ? 'T' : 'C';
+    currSwitch->hasPacket = true;
+    return true;
+  }
+  if (isDownValid && helperBenes(m - 1, currSwitch->downOutPort, destPort,
+                                 currSwitch->downOut)) {
+    currSwitch->config = currPort == currSwitch->downPort ? 'T' : 'C';
+    currSwitch->hasPacket = true;
+    return true;
+  }
+
+  return false;
+}
+
+void routeBenes(int A, int M, int *packets, input_t **inputs,
+                switch_t ***switches) {
+  for (int i = 0; i < A; i++) {
+    int packet = packets[i];
+    input_t *input = inputs[i];
+    switch_t *currSwitch = input->firstSwitch;
+    int currPort = input->firstSwitchPort;
+    bool isRouted = helperBenes(M, currPort, packet, currSwitch);
+    if (!isRouted)
+      printf("Packet dropped: %d\n", packet);
   }
 }
 
@@ -182,6 +237,8 @@ switch_t ***initializeSwitches(int N, int M,
       currSwitch->config = 'T';
       uint32_t upPort = 2 * i;
       uint32_t downPort = upPort + 1;
+      currSwitch->upPort = upPort;
+      currSwitch->downPort = downPort;
 
       if (j == 0)
         goto addSwitch;
@@ -191,7 +248,7 @@ switch_t ***initializeSwitches(int N, int M,
       if (streq(sw, "Delta", 5))
         connectDelta(upPort, downPort, N, M, switches, j, currSwitch);
       if (streq(sw, "Benes", 5))
-        connectOmega(upPort, downPort, M, switches, j, currSwitch);
+        connectBenes(upPort, downPort, M, switches, j, currSwitch);
 
     addSwitch:
       switches[i][j] = currSwitch;
@@ -245,10 +302,15 @@ int main(int argc, char *argv[]) {
   else
     M = log2(N);
 
+  bitWidth = log2(N);
+
   switch_t ***switches = initializeSwitches(N / 2, M, sw);
   input_t **inputs = initializeInputs(N, M, switches, sw);
   if (!isBenes)
-    selfRoutePackets(N, A, M, switches, packets, inputs);
+    selfRoutePackets(A, M, packets, inputs);
+  else
+    routeBenes(A, M, packets, inputs, switches);
+
   for (int i = 0; i < N / 2; i++) {
     for (int j = 0; j < M; j++) {
       printf("%c ", switches[i][j]->config);

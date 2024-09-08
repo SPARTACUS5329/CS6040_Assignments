@@ -7,6 +7,8 @@ typedef struct Switch {
   int id;
   int row;
   int col;
+  int upPort;
+  int downPort;
   bool hasPacket;
   int upInPort;
   int upOutPort;
@@ -38,6 +40,8 @@ void connectDelta(int upPort, int downPort, int N, int M, switch_t ***switches,
 void connectSwitches(switch_t ***switches, int upPort, int downPort,
                      int upPrevPort, int downPrevPort, int col,
                      switch_t *currSwitch);
-void selfRoutePackets(int N, int A, int M, switch_t ***switches, int *packets,
-                      input_t **inputs);
+void selfRoutePackets(int A, int M, int *packets, input_t **inputs);
 char isSwitchInContention(switch_t *currSwitch, int currPort, int dest);
+void routeBenes(int A, int M, int *packets, input_t **inputs,
+                switch_t ***switches);
+bool helperBenes(int m, int prevPort, int destPort, switch_t *currSwitch);
