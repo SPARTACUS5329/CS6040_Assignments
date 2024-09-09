@@ -313,7 +313,7 @@ int main(int argc, char *argv[]) {
 
   for (int i = 0; i < N / 2; i++) {
     for (int j = 0; j < M; j++) {
-      printf("%c ", switches[i][j]->config);
+      printf("%c%c", switches[i][j]->config, j == M - 1 ? '\0' : ' ');
     }
     printf("\n");
   }
