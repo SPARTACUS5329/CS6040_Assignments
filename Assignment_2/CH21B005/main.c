@@ -336,8 +336,11 @@ int main(int argc, char *argv[]) {
     droppedPackets = routeBenes(A, M, packets, inputs, switches);
 
   for (int i = 0; i < N / 2; i++) {
-    for (int j = 0; j < M; j++)
-      printf("%c%c", switches[i][j]->config, j == M - 1 ? '\0' : ' ');
+    for (int j = 0; j < M; j++) {
+      printf("%c", switches[i][j]->config);
+      if (j != M - 1)
+        printf(" ");
+    }
     printf("\n");
   }
 
