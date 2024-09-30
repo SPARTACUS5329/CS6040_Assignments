@@ -153,9 +153,12 @@ int transmitPackets(router_t *router) {
   int delay = 0;
   for (int i = 0; i < numPorts; i++) {
     port_t *outPort = outputPorts[i];
-    if (outPort->packetCount == 0)
+    if (outPort->packetCount == 0) {
+      outPort->idleSlots++;
       continue;
+    }
     delay += router->timeSlot - outPort->holPacket->startTime;
+    outPort->transmittedPackets++;
     if (--outPort->packetCount == 0) {
       outPort->holPacket = NULL;
       outPort->eolPacket = NULL;
@@ -169,7 +172,9 @@ int transmitPackets(router_t *router) {
 
 void simulate(router_t *router) {
   int totalDelay = 0;
-  for (int i = 0; i < params.maxTimeSlots; i++) {
+  int numPorts = router->numPorts;
+  int maxTimeSlots = params.maxTimeSlots;
+  for (int i = 0; i < maxTimeSlots; i++) {
     router->timeSlot = i;
     generatePackets(router);
     schedulePackets(router);
@@ -177,7 +182,18 @@ void simulate(router_t *router) {
       cleanRouterInputs(router);
     totalDelay += transmitPackets(router);
   }
-  printf("totalDelay: %d\n", totalDelay);
+  port_t **outputPorts = router->outputPorts;
+  int totalIdleSlots = 0, totalTransmittedPackets = 0;
+  for (int i = 0; i < numPorts; i++) {
+    totalIdleSlots += outputPorts[i]->idleSlots;
+    totalTransmittedPackets += outputPorts[i]->transmittedPackets;
+  }
+  double averageUtilisation =
+      (double)totalIdleSlots / (numPorts * maxTimeSlots);
+  double averageDelay = (double)totalDelay / totalTransmittedPackets;
+
+  printf("average utilization: %lf\n", averageUtilisation);
+  printf("average delay: %lf\n", averageDelay);
 }
 
 int getRandomNumber(int a, int b) { // range is both inclusive
@@ -229,6 +245,7 @@ int main(int argc, char *argv[]) {
   switch (params.scheduleType) {
   case NOQ:
     params.bufferCapacity = 0;
+    params.lookup = 1;
     params.knockout = 1;
     break;
   case INQ:
