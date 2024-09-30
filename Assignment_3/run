@@ -1,0 +1,3 @@
+gcc main.c -o ./routing
+./routing -N 8 -B 10 -p 0.1 \
+ -q NOQ -K 3 -L 1 -o outputfile -T 10
