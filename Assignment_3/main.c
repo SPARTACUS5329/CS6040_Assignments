@@ -39,15 +39,20 @@ void generatePackets(router_t *router) {
   int outPort;
   int random, threshold = 100 * params.packetGenProb;
   for (int i = 0; i < numPorts; i++) {
+    port_t *inputPort = inputPorts[i];
+    if (inputPort->bufferCapacity != 0 &&
+        inputPort->packetCount == inputPort->bufferCapacity)
+      continue;
+
     random = getRandomNumber(0, 100);
     if (random < threshold)
       continue;
+
     outPort = getRandomNumber(0, numPorts - 1);
     packet_t *packet = (packet_t *)malloc(sizeof(packet_t));
     packet->inPort = i;
     packet->outPort = outPort;
     packet->startTime = router->timeSlot;
-    port_t *inputPort = inputPorts[i];
     if (inputPort->packetCount++ == 0) {
       inputPort->holPacket = packet;
       inputPort->eolPacket = packet;
@@ -56,6 +61,30 @@ void generatePackets(router_t *router) {
       packet->nextPacket = inputPort->eolPacket;
       inputPort->eolPacket = packet;
     }
+  }
+}
+
+void scheduleNOQ(router_t *router) {
+  port_t **inputPorts = router->inputPorts;
+  port_t **outputPorts = router->outputPorts;
+  for (int i = 0; i < router->numPorts; i++) {
+    port_t *outPort = outputPorts[i];
+    int *contenders = (int *)malloc(2 * MAX_PORTS * sizeof(int));
+    int contenderCount = 0;
+    for (int j = 0; j < router->numPorts; j++) {
+      port_t *inPort = inputPorts[j];
+      if (inPort->holPacket != NULL &&
+          inPort->holPacket->outPort == outPort->port) {
+        contenders[contenderCount++] = inPort->port;
+      }
+    }
+    if (contenderCount == 0)
+      continue;
+    int r = getRandomNumber(0, contenderCount - 1);
+    int chosenInputPortNumber = contenders[r];
+    port_t *chosenInputPort = inputPorts[chosenInputPortNumber];
+    packet_t *chosenPacket = chosenInputPort->holPacket;
+    sendToOutput(router, chosenPacket);
   }
 }
 
@@ -105,7 +134,7 @@ void schedulePackets(router_t *router) {
     packet_t *packet = inputPort->holPacket;
     switch (params.scheduleType) {
     case NOQ:
-      sendToOutput(router, packet);
+      scheduleNOQ(router);
       break;
     case INQ:
       sendToOutput(router, packet);

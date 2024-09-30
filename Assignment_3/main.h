@@ -55,3 +55,4 @@ void schedulePackets(router_t *router);
 void sendToOutput(router_t *router, packet_t *packet);
 int transmitPackets(router_t *router);
 void cleanRouterInputs(router_t *router);
+void scheduleNOQ(router_t *router);
