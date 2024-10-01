@@ -1,11 +1,13 @@
 #include "main.h"
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 routing_params_t params = {8, 10, 0.5, INQ, 1, 0, "", 0};
+static int totalPackets = 0;
 
 router_t *initialiseIO() {
   router_t *router = (router_t *)malloc(sizeof(router_t));
@@ -45,11 +47,12 @@ void generatePackets(router_t *router) {
       continue;
 
     random = getRandomNumber(0, 100);
-    if (random < threshold)
+    if (random > threshold)
       continue;
 
     outPort = getRandomNumber(0, numPorts - 1);
     packet_t *packet = (packet_t *)malloc(sizeof(packet_t));
+    packet->id = totalPackets++;
     packet->inPort = i;
     packet->outPort = outPort;
     packet->startTime = router->timeSlot;
@@ -88,6 +91,24 @@ void scheduleNOQ(router_t *router) {
   }
 }
 
+void scheduleCIOQ(router_t *router) {
+  packet_t **packets = (packet_t **)malloc(MAX_PORTS * sizeof(packet_t *));
+  for (int l = 0; l < params.lookup; l++) {
+    for (int i = 0; i < router->numPorts; i++) {
+      if (l == 0) {
+        port_t *inputPort = router->inputPorts[i];
+        packets[i] = inputPort->holPacket;
+      }
+      if (packets[i] == NULL)
+        continue;
+      packet_t *packet = packets[i];
+      packets[i] = packet->prevPacket;
+      sendToOutput(router, packet);
+    }
+  }
+  free(packets);
+}
+
 void sendToOutput(router_t *router, packet_t *packet) {
   port_t *outPort = router->outputPorts[packet->outPort];
   port_t *inPort = router->inputPorts[packet->inPort];
@@ -98,9 +119,15 @@ void sendToOutput(router_t *router, packet_t *packet) {
   if (--inPort->packetCount == 0) {
     inPort->holPacket = NULL;
     inPort->eolPacket = NULL;
-  } else {
+  } else if (packet->id == inPort->holPacket->id) {
     inPort->holPacket = inPort->holPacket->prevPacket;
     inPort->holPacket->nextPacket = NULL;
+  } else if (packet->id == inPort->eolPacket->id) {
+    inPort->eolPacket = packet->nextPacket;
+    inPort->eolPacket->prevPacket = NULL;
+  } else {
+    packet->prevPacket->nextPacket = packet->nextPacket;
+    packet->nextPacket->prevPacket = packet->prevPacket;
   }
 
   if (outPort->packetCount++ == 0) {
@@ -113,6 +140,7 @@ void sendToOutput(router_t *router, packet_t *packet) {
   packet->nextPacket = outPort->eolPacket;
   outPort->eolPacket = packet;
   packet->prevPacket = NULL;
+  return;
 }
 
 void cleanRouterInputs(router_t *router) {
@@ -140,6 +168,7 @@ void schedulePackets(router_t *router) {
       sendToOutput(router, packet);
       break;
     case CIOQ:
+      scheduleCIOQ(router);
       break;
     default:
       error("Scheduling type not supported");
@@ -157,14 +186,16 @@ int transmitPackets(router_t *router) {
       outPort->idleSlots++;
       continue;
     }
-    delay += router->timeSlot - outPort->holPacket->startTime;
-    outPort->transmittedPackets++;
-    if (--outPort->packetCount == 0) {
-      outPort->holPacket = NULL;
-      outPort->eolPacket = NULL;
-    } else {
-      outPort->holPacket = outPort->holPacket->prevPacket;
-      outPort->holPacket->nextPacket = NULL;
+    outPort->transmittedPackets += outPort->packetCount;
+    while (outPort->packetCount > 0) {
+      delay += router->timeSlot - outPort->holPacket->startTime;
+      if (--outPort->packetCount == 0) {
+        outPort->holPacket = NULL;
+        outPort->eolPacket = NULL;
+      } else {
+        outPort->holPacket = outPort->holPacket->prevPacket;
+        outPort->holPacket->nextPacket = NULL;
+      }
     }
   }
   return delay;
@@ -188,12 +219,12 @@ void simulate(router_t *router) {
     totalIdleSlots += outputPorts[i]->idleSlots;
     totalTransmittedPackets += outputPorts[i]->transmittedPackets;
   }
-  double averageUtilisation =
-      (double)totalIdleSlots / (numPorts * maxTimeSlots);
-  double averageDelay = (double)totalDelay / totalTransmittedPackets;
+  long double averageUtilisation =
+      1 - (long double)totalIdleSlots / (numPorts * maxTimeSlots);
+  long double averageDelay = (long double)totalDelay / totalTransmittedPackets;
 
-  printf("average utilization: %lf\n", averageUtilisation);
-  printf("average delay: %lf\n", averageDelay);
+  printf("average utilization: %Lf\n", averageUtilisation);
+  printf("average delay: %Lf\n", averageDelay);
 }
 
 int getRandomNumber(int a, int b) { // range is both inclusive

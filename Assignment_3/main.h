@@ -30,6 +30,7 @@ typedef struct Router {
 } router_t;
 
 typedef struct Packet {
+  int id;
   int inPort;
   int outPort;
   int startTime;
@@ -58,3 +59,4 @@ void sendToOutput(router_t *router, packet_t *packet);
 int transmitPackets(router_t *router);
 void cleanRouterInputs(router_t *router);
 void scheduleNOQ(router_t *router);
+void scheduleCIOQ(router_t *router);
