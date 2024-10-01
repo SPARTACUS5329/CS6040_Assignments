@@ -26,7 +26,7 @@ router_t *initialiseIO() {
     port_t *port = (port_t *)malloc(sizeof(port_t));
     port->port = i;
     port->type = OUTPUT;
-    port->bufferCapacity = params.knockout;
+    port->bufferCapacity = params.bufferCapacity;
     outputPorts[i] = port;
   }
   router->numPorts = params.ports;
@@ -72,7 +72,7 @@ void scheduleNOQ(router_t *router) {
   port_t **outputPorts = router->outputPorts;
   for (int i = 0; i < router->numPorts; i++) {
     port_t *outPort = outputPorts[i];
-    int *contenders = (int *)malloc(2 * MAX_PORTS * sizeof(int));
+    int contenders[router->numPorts];
     int contenderCount = 0;
     for (int j = 0; j < router->numPorts; j++) {
       port_t *inPort = inputPorts[j];
@@ -93,16 +93,18 @@ void scheduleNOQ(router_t *router) {
 
 void scheduleCIOQ(router_t *router) {
   packet_t **packets = (packet_t **)malloc(MAX_PORTS * sizeof(packet_t *));
+  int knockoutCount[router->numPorts];
   for (int l = 0; l < params.lookup; l++) {
     for (int i = 0; i < router->numPorts; i++) {
       if (l == 0) {
         port_t *inputPort = router->inputPorts[i];
         packets[i] = inputPort->holPacket;
       }
-      if (packets[i] == NULL)
-        continue;
       packet_t *packet = packets[i];
+      if (packet == NULL || knockoutCount[packet->outPort] == params.knockout)
+        continue;
       packets[i] = packet->prevPacket;
+      knockoutCount[packet->outPort] += 1;
       sendToOutput(router, packet);
     }
   }
@@ -113,7 +115,8 @@ void sendToOutput(router_t *router, packet_t *packet) {
   port_t *outPort = router->outputPorts[packet->outPort];
   port_t *inPort = router->inputPorts[packet->inPort];
 
-  if (outPort->packetCount == outPort->bufferCapacity)
+  if (outPort->bufferCapacity != 0 &&
+      outPort->packetCount == outPort->bufferCapacity)
     return;
 
   if (--inPort->packetCount == 0) {
@@ -155,24 +158,25 @@ void cleanRouterInputs(router_t *router) {
 void schedulePackets(router_t *router) {
   port_t **inputPorts = router->inputPorts;
   int numPorts = router->numPorts;
-  for (int i = 0; i < numPorts; i++) {
-    port_t *inputPort = inputPorts[i];
-    if (inputPort->packetCount == 0)
-      continue;
-    packet_t *packet = inputPort->holPacket;
-    switch (params.scheduleType) {
-    case NOQ:
-      scheduleNOQ(router);
-      break;
-    case INQ:
+
+  switch (params.scheduleType) {
+  case NOQ:
+    scheduleNOQ(router);
+    break;
+  case INQ:
+    for (int i = 0; i < numPorts; i++) {
+      port_t *inputPort = inputPorts[i];
+      if (inputPort->packetCount == 0)
+        continue;
+      packet_t *packet = inputPort->holPacket;
       sendToOutput(router, packet);
-      break;
-    case CIOQ:
-      scheduleCIOQ(router);
-      break;
-    default:
-      error("Scheduling type not supported");
     }
+    break;
+  case CIOQ:
+    scheduleCIOQ(router);
+    break;
+  default:
+    error("Scheduling type not supported");
   }
 }
 
@@ -186,16 +190,14 @@ int transmitPackets(router_t *router) {
       outPort->idleSlots++;
       continue;
     }
-    outPort->transmittedPackets += outPort->packetCount;
-    while (outPort->packetCount > 0) {
-      delay += router->timeSlot - outPort->holPacket->startTime;
-      if (--outPort->packetCount == 0) {
-        outPort->holPacket = NULL;
-        outPort->eolPacket = NULL;
-      } else {
-        outPort->holPacket = outPort->holPacket->prevPacket;
-        outPort->holPacket->nextPacket = NULL;
-      }
+    outPort->transmittedPackets++;
+    delay += router->timeSlot - outPort->holPacket->startTime;
+    if (--outPort->packetCount == 0) {
+      outPort->holPacket = NULL;
+      outPort->eolPacket = NULL;
+    } else {
+      outPort->holPacket = outPort->holPacket->prevPacket;
+      outPort->holPacket->nextPacket = NULL;
     }
   }
   return delay;
@@ -224,6 +226,7 @@ void simulate(router_t *router) {
   long double averageDelay = (long double)totalDelay / totalTransmittedPackets;
 
   printf("average utilization: %Lf\n", averageUtilisation);
+  printf("total delay: %d\n", totalDelay);
   printf("average delay: %Lf\n", averageDelay);
 }
 
