@@ -7,6 +7,7 @@
 #include <time.h>
 
 routing_params_t params = {8, 10, 0.5, INQ, 1, 0, "", 0};
+static int totalDelay = 0;
 static int totalPackets = 0;
 static int totalIdleSlots = 0;
 static int totalTransmittedPackets = 0;
@@ -221,7 +222,6 @@ int transmitPackets(router_t *router) {
 }
 
 void simulate(router_t *router) {
-  int totalDelay = 0;
   int numPorts = router->numPorts;
   int maxTimeSlots = params.maxTimeSlots;
   for (int i = 0; i < maxTimeSlots; i++) {
@@ -232,21 +232,46 @@ void simulate(router_t *router) {
       cleanRouterInputs(router);
     totalDelay += transmitPackets(router);
   }
-  port_t **outputPorts = router->outputPorts;
+}
+
+void writeOutput(const char *filename) {
+  FILE *file = fopen("output.txt", "w");
+  if (file == NULL)
+    error("Error opening file!");
+
   long double averageUtilisation =
-      1 - (long double)totalIdleSlots / (numPorts * maxTimeSlots);
+      1 - (long double)totalIdleSlots / (params.ports * params.maxTimeSlots);
   long double averageDelay = (long double)totalDelay / totalTransmittedPackets;
   long double packetDropProbability =
       1 - (long double)totalTransmittedPackets / totalPackets;
 
-  printf("average utilization: %Lf\n", averageUtilisation);
-  printf("drop probability: %Lf\n", packetDropProbability);
-  printf("average delay: %Lf\n", averageDelay);
+  fprintf(file, "%d\t", params.ports);
+  fprintf(file, "%lf\t", params.packetGenProb);
+  switch (params.scheduleType) {
+  case NOQ:
+    fprintf(file, "NOQ\t");
+    break;
+  case INQ:
+    fprintf(file, "INQ\t");
+    break;
+  case CIOQ:
+    fprintf(file, "%d\t", params.lookup);
+    fprintf(file, "%d\t", params.knockout);
+    fprintf(file, "CIOQ\t");
+    break;
+  default:
+    error("Scheduling type not supported");
+  }
+  fprintf(file, "%Lf\t", averageDelay);
+  fprintf(file, "%Lf", averageUtilisation);
+  printf("Packet drop probability: %Lf\n", packetDropProbability);
   if (params.scheduleType == CIOQ) {
     long double knockoutProb =
-        (long double)totalKnockouts / (router->numPorts * maxTimeSlots);
-    printf("knockout probability: %Lf\n", knockoutProb);
+        (long double)totalKnockouts / (params.ports * params.maxTimeSlots);
+    fprintf(file, "\t%Lf", knockoutProb);
   }
+  fprintf(file, "\n");
+  fclose(file);
 }
 
 int getRandomNumber(int a, int b) { // range is both inclusive
@@ -317,6 +342,7 @@ int main(int argc, char *argv[]) {
 
   router_t *router = initialiseIO();
   simulate(router);
+  writeOutput(params.outputfile);
 
   return 0;
 }

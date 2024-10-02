@@ -59,3 +59,4 @@ int transmitPackets(router_t *router);
 void cleanRouterInputs(router_t *router);
 void scheduleNOQ(router_t *router);
 void scheduleCIOQ(router_t *router);
+void writeOutput(const char *filename);
