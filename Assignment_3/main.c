@@ -8,6 +8,9 @@
 
 routing_params_t params = {8, 10, 0.5, INQ, 1, 0, "", 0};
 static int totalPackets = 0;
+static int totalIdleSlots = 0;
+static int totalTransmittedPackets = 0;
+static int totalKnockouts = 0;
 
 router_t *initialiseIO() {
   router_t *router = (router_t *)malloc(sizeof(router_t));
@@ -42,20 +45,23 @@ void generatePackets(router_t *router) {
   int random, threshold = 100 * params.packetGenProb;
   for (int i = 0; i < numPorts; i++) {
     port_t *inputPort = inputPorts[i];
-    if (inputPort->bufferCapacity != 0 &&
-        inputPort->packetCount == inputPort->bufferCapacity)
-      continue;
 
     random = getRandomNumber(0, 100);
     if (random > threshold)
       continue;
 
+    totalPackets++;
+    if (inputPort->bufferCapacity != 0 &&
+        inputPort->packetCount == inputPort->bufferCapacity)
+      continue;
+
     outPort = getRandomNumber(0, numPorts - 1);
-    packet_t *packet = (packet_t *)malloc(sizeof(packet_t));
-    packet->id = totalPackets++;
+    packet_t *packet = (packet_t *)calloc(1, sizeof(packet_t));
+    packet->id = totalPackets;
     packet->inPort = i;
     packet->outPort = outPort;
     packet->startTime = router->timeSlot;
+
     if (inputPort->packetCount++ == 0) {
       inputPort->holPacket = packet;
       inputPort->eolPacket = packet;
@@ -92,8 +98,9 @@ void scheduleNOQ(router_t *router) {
 }
 
 void scheduleCIOQ(router_t *router) {
-  packet_t **packets = (packet_t **)malloc(MAX_PORTS * sizeof(packet_t *));
-  int knockoutCount[router->numPorts];
+  packet_t **packets =
+      (packet_t **)malloc(router->numPorts * sizeof(packet_t *));
+  int *knockoutCount = (int *)calloc(router->numPorts, sizeof(int));
   for (int l = 0; l < params.lookup; l++) {
     for (int i = 0; i < router->numPorts; i++) {
       if (l == 0) {
@@ -101,14 +108,23 @@ void scheduleCIOQ(router_t *router) {
         packets[i] = inputPort->holPacket;
       }
       packet_t *packet = packets[i];
-      if (packet == NULL || knockoutCount[packet->outPort] == params.knockout)
+      if (packet == NULL)
+        continue;
+      knockoutCount[packet->outPort] += 1;
+      if (knockoutCount[packet->outPort] > params.knockout)
         continue;
       packets[i] = packet->prevPacket;
-      knockoutCount[packet->outPort] += 1;
       sendToOutput(router, packet);
     }
   }
+
+  for (int i = 0; i < router->numPorts; i++) {
+    if (knockoutCount[i] > params.knockout)
+      totalKnockouts++;
+  }
+
   free(packets);
+  free(knockoutCount);
 }
 
 void sendToOutput(router_t *router, packet_t *packet) {
@@ -133,6 +149,9 @@ void sendToOutput(router_t *router, packet_t *packet) {
     packet->nextPacket->prevPacket = packet->prevPacket;
   }
 
+  packet->nextPacket = outPort->eolPacket;
+  packet->prevPacket = NULL;
+
   if (outPort->packetCount++ == 0) {
     outPort->holPacket = packet;
     outPort->eolPacket = packet;
@@ -140,9 +159,7 @@ void sendToOutput(router_t *router, packet_t *packet) {
   }
 
   outPort->eolPacket->prevPacket = packet;
-  packet->nextPacket = outPort->eolPacket;
   outPort->eolPacket = packet;
-  packet->prevPacket = NULL;
   return;
 }
 
@@ -187,10 +204,10 @@ int transmitPackets(router_t *router) {
   for (int i = 0; i < numPorts; i++) {
     port_t *outPort = outputPorts[i];
     if (outPort->packetCount == 0) {
-      outPort->idleSlots++;
+      totalIdleSlots++;
       continue;
     }
-    outPort->transmittedPackets++;
+    totalTransmittedPackets++;
     delay += router->timeSlot - outPort->holPacket->startTime;
     if (--outPort->packetCount == 0) {
       outPort->holPacket = NULL;
@@ -216,18 +233,20 @@ void simulate(router_t *router) {
     totalDelay += transmitPackets(router);
   }
   port_t **outputPorts = router->outputPorts;
-  int totalIdleSlots = 0, totalTransmittedPackets = 0;
-  for (int i = 0; i < numPorts; i++) {
-    totalIdleSlots += outputPorts[i]->idleSlots;
-    totalTransmittedPackets += outputPorts[i]->transmittedPackets;
-  }
   long double averageUtilisation =
       1 - (long double)totalIdleSlots / (numPorts * maxTimeSlots);
   long double averageDelay = (long double)totalDelay / totalTransmittedPackets;
+  long double packetDropProbability =
+      1 - (long double)totalTransmittedPackets / totalPackets;
 
   printf("average utilization: %Lf\n", averageUtilisation);
-  printf("total delay: %d\n", totalDelay);
+  printf("drop probability: %Lf\n", packetDropProbability);
   printf("average delay: %Lf\n", averageDelay);
+  if (params.scheduleType == CIOQ) {
+    long double knockoutProb =
+        (long double)totalKnockouts / (router->numPorts * maxTimeSlots);
+    printf("knockout probability: %Lf\n", knockoutProb);
+  }
 }
 
 int getRandomNumber(int a, int b) { // range is both inclusive

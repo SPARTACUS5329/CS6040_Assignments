@@ -43,7 +43,6 @@ typedef struct Port {
   int port;
   int bufferCapacity;
   int packetCount;
-  int idleSlots;
   int transmittedPackets;
   packet_t *holPacket;
   packet_t *eolPacket;
