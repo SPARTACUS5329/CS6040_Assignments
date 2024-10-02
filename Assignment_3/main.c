@@ -12,6 +12,8 @@ static int totalPackets = 0;
 static int totalIdleSlots = 0;
 static int totalTransmittedPackets = 0;
 static int totalKnockouts = 0;
+static int totalOutputBufferOccupancy = 0;
+static int totalInputBufferOccupancy = 0;
 
 router_t *initialiseIO() {
   router_t *router = (router_t *)malloc(sizeof(router_t));
@@ -192,7 +194,7 @@ void schedulePackets(router_t *router) {
     scheduleNOQ(router);
     break;
   case INQ:
-    scheduleCIOQ(router);
+    scheduleCIOQ(router); // INQ is just CIOQ with L = K = 1
     break;
   case CIOQ:
     scheduleCIOQ(router);
@@ -204,10 +206,14 @@ void schedulePackets(router_t *router) {
 
 int transmitPackets(router_t *router) {
   port_t **outputPorts = router->outputPorts;
+  port_t **inputPorts = router->inputPorts;
   int numPorts = router->numPorts;
   int delay = 0;
   for (int i = 0; i < numPorts; i++) {
     port_t *outPort = outputPorts[i];
+    port_t *inPort = inputPorts[i];
+    totalOutputBufferOccupancy += outPort->packetCount;
+    totalInputBufferOccupancy += inPort->packetCount;
     if (outPort->packetCount == 0) {
       totalIdleSlots++;
       continue;
@@ -248,6 +254,12 @@ void writeOutput(const char *filename) {
   long double averageDelay = (long double)totalDelay / totalTransmittedPackets;
   long double packetDropProbability =
       1 - (long double)totalTransmittedPackets / totalPackets;
+  long double averageOutputBufferOccupancy =
+      (long double)totalOutputBufferOccupancy /
+      (params.ports * params.maxTimeSlots);
+  long double averageInputBufferOccupancy =
+      (long double)totalInputBufferOccupancy /
+      (params.ports * params.maxTimeSlots);
 
   fprintf(file, "%d\t", params.ports);
   fprintf(file, "%lf\t", params.packetGenProb);
@@ -269,6 +281,9 @@ void writeOutput(const char *filename) {
   fprintf(file, "%Lf\t", averageDelay);
   fprintf(file, "%Lf", averageUtilisation);
   printf("Packet drop probability: %Lf\n", packetDropProbability);
+  printf("Average output buffer occupancy: %Lf\n",
+         averageOutputBufferOccupancy);
+  printf("Average input buffer occupancy: %Lf\n", averageInputBufferOccupancy);
   if (params.scheduleType == CIOQ) {
     long double knockoutProb =
         (long double)totalKnockouts / (params.ports * params.maxTimeSlots);
