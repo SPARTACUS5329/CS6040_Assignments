@@ -1,4 +1,4 @@
 clear
 gcc main.c -o ./routing
-./routing -N 8 -B 20 -p 0.9 \
- -q CIOQ -K 4 -L 10 -o outputfile -T 10000
+./routing -N 32 -B 20 -p 0.9 \
+ -q INQ -K 12 -L 10 -o outputfile -T 10000

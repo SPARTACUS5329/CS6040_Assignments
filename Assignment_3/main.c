@@ -42,8 +42,10 @@ router_t *initialiseIO() {
 void generatePackets(router_t *router) {
   port_t **inputPorts = router->inputPorts;
   int numPorts = router->numPorts;
-  int outPort;
-  int random, threshold = 100 * params.packetGenProb;
+  int random, outPort;
+  int threshold = 100 * params.packetGenProb;
+  int *knockoutCount = (int *)calloc(router->numPorts, sizeof(int));
+
   for (int i = 0; i < numPorts; i++) {
     port_t *inputPort = inputPorts[i];
 
@@ -52,9 +54,6 @@ void generatePackets(router_t *router) {
       continue;
 
     totalPackets++;
-    if (inputPort->bufferCapacity != 0 &&
-        inputPort->packetCount == inputPort->bufferCapacity)
-      continue;
 
     outPort = getRandomNumber(0, numPorts - 1);
     packet_t *packet = (packet_t *)calloc(1, sizeof(packet_t));
@@ -62,6 +61,12 @@ void generatePackets(router_t *router) {
     packet->inPort = i;
     packet->outPort = outPort;
     packet->startTime = router->timeSlot;
+
+    knockoutCount[packet->outPort] += 1;
+
+    if (inputPort->bufferCapacity != 0 &&
+        inputPort->packetCount == inputPort->bufferCapacity)
+      continue;
 
     if (inputPort->packetCount++ == 0) {
       inputPort->holPacket = packet;
@@ -72,6 +77,13 @@ void generatePackets(router_t *router) {
       inputPort->eolPacket = packet;
     }
   }
+
+  if (params.scheduleType == CIOQ)
+    for (int i = 0; i < numPorts; i++)
+      if (knockoutCount[i] > params.knockout)
+        totalKnockouts++;
+
+  free(knockoutCount);
 }
 
 void scheduleNOQ(router_t *router) {
@@ -108,20 +120,18 @@ void scheduleCIOQ(router_t *router) {
         port_t *inputPort = router->inputPorts[i];
         packets[i] = inputPort->holPacket;
       }
+
       packet_t *packet = packets[i];
       if (packet == NULL)
         continue;
+
+      packets[i] = packet->prevPacket;
       knockoutCount[packet->outPort] += 1;
       if (knockoutCount[packet->outPort] > params.knockout)
         continue;
-      packets[i] = packet->prevPacket;
+
       sendToOutput(router, packet);
     }
-  }
-
-  for (int i = 0; i < router->numPorts; i++) {
-    if (knockoutCount[i] > params.knockout)
-      totalKnockouts++;
   }
 
   free(packets);
@@ -182,13 +192,7 @@ void schedulePackets(router_t *router) {
     scheduleNOQ(router);
     break;
   case INQ:
-    for (int i = 0; i < numPorts; i++) {
-      port_t *inputPort = inputPorts[i];
-      if (inputPort->packetCount == 0)
-        continue;
-      packet_t *packet = inputPort->holPacket;
-      sendToOutput(router, packet);
-    }
+    scheduleCIOQ(router);
     break;
   case CIOQ:
     scheduleCIOQ(router);
