@@ -1,0 +1,7 @@
+clear
+gcc main.c -o ./routing
+mkdir -p outputs
+mkdir -p outputs/NOQ
+mkdir -p outputs/INQ
+mkdir -p outputs/CIOQ
+Python3.8 simulate.py
