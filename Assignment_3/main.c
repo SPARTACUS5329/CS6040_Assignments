@@ -116,6 +116,7 @@ void scheduleCIOQ(router_t *router) {
   packet_t **packets =
       (packet_t **)malloc(router->numPorts * sizeof(packet_t *));
   int *knockoutCount = (int *)calloc(router->numPorts, sizeof(int));
+
   for (int l = 0; l < params.lookup; l++) {
     for (int i = 0; i < router->numPorts; i++) {
       if (l == 0) {
@@ -245,7 +246,7 @@ void simulate(router_t *router) {
 }
 
 void writeOutput(const char *filename) {
-  FILE *file = fopen("output.txt", "w");
+  FILE *file = fopen(filename, "w");
   if (file == NULL)
     error("Error opening file!");
 
