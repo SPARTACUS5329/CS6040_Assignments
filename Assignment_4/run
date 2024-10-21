@@ -1,0 +1,3 @@
+clear
+gcc main.c -o wfq
+./wfq -in inputfile -out outputfile

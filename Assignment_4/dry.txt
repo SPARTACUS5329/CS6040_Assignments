@@ -1,0 +1,38 @@
+global queue
+global time
+global round
+
+main(inputfile, outputfile):
+	[X] Read from input file
+	[X] Create a list of connection_t;
+
+	Create controller thread
+	For each connection:
+		Create a thread
+
+connectionThread(connection):
+	while connection.hasPacket():
+		[X] Generate interArrivalTime
+		[X] Generate packet length
+		[X] Create packet_t
+		connection.generatePacket()
+		sleep(interval)
+	
+controllerThread():
+	double slopeFactor;
+	while time <= T:
+		oldRound = round;
+		transmitPacket()
+		time += packetLength;
+		newRound = updateRound(oldRound, packet.startTime, packet.endTime);
+		while (conn = iterativeDelete()) != NULL:
+			newRound = updateRound(oldRound, packet.startTime, conn.deadTime);
+			slopeFactor -= conn.weight
+			round = updateRound(newRound, conn.deadTime, packet.endTime);
+
+iterativeDelete(connectionList):
+	for each connection:
+		if !connection.isActive():
+			return connection;
+
+	return NULL;
