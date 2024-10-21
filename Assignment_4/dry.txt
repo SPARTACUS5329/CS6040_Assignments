@@ -6,18 +6,17 @@ main(inputfile, outputfile):
 	[X] Read from input file
 	[X] Create a list of connection_t;
 
-	Create controller thread
+	[X] Create a timer thread
+	[X] Create controller thread
 	For each connection:
-		Create a thread
+		[X] Create a thread
 
 connectionThread(connection):
 	while connection.hasPacket():
 		[X] Generate interArrivalTime
-		[X] Generate packet length
-		[X] Create packet_t
-		connection.generatePacket()
-		Add packet to queue
-		sleep(interval)
+		[X] connection.generatePacket()
+		[X] Add packet to queue
+		[X] sleep(interArrivalTime)
 	
 controllerThread():
 	double slopeFactor;

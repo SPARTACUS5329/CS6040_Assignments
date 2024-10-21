@@ -1,0 +1,5 @@
+1 time unit = 0.1 ms = 1e-4 s = 100 µs
+1e6 time units = 0.1 * 1e6 ms = 1e5 ms = 100 s 
+
+1 s = 1e4 time units
+N s = N * 1e4 time units
