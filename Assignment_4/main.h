@@ -1,4 +1,5 @@
 #pragma once
+#include <pthread.h>
 #define streq(str1, str2, n) (strncmp(str1, str2, n) == 0)
 
 typedef struct Param param_t;
@@ -19,6 +20,7 @@ typedef struct ConnectionList {
 } conn_list_t;
 
 typedef struct Connection {
+  int id;
   int p;
   int lMin;
   int lMax;
@@ -26,6 +28,7 @@ typedef struct Connection {
   double tStart;
   double tEnd;
   double *interArrivalTimes;
+  pthread_t *thread;
 } conn_t;
 
 typedef struct Packet {
@@ -41,3 +44,5 @@ conn_list_t *readInputFile(const char *filename, param_t *params);
 double generateInterArrivalTimes(double mu);
 packet_t *generatePacket(conn_t *conn, double prevTime,
                          double interArrivalTime);
+void *connection(void *arg);
+void *controller(void *arg);

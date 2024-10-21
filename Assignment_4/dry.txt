@@ -16,12 +16,14 @@ connectionThread(connection):
 		[X] Generate packet length
 		[X] Create packet_t
 		connection.generatePacket()
+		Add packet to queue
 		sleep(interval)
 	
 controllerThread():
 	double slopeFactor;
 	while time <= T:
 		oldRound = round;
+		Get packet with minimum finish number
 		transmitPacket()
 		time += packetLength;
 		newRound = updateRound(oldRound, packet.startTime, packet.endTime);

@@ -1,5 +1,7 @@
 #include "main.h"
 #include <math.h>
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +12,8 @@ conn_list_t *readInputFile(const char *filename, param_t *params) {
   if (file == NULL)
     error("Failed to open input file");
 
+  int totalConnections = 0;
+
   fscanf(file, "N=%d T=%d C=%d B=%d", &params->N, &params->T, &params->C,
          &params->B);
 
@@ -19,6 +23,8 @@ conn_list_t *readInputFile(const char *filename, param_t *params) {
 
   for (int i = 0; i < params->N; i++) {
     conn_t *conn = (conn_t *)malloc(sizeof(conn_t));
+    conn->id = totalConnections++;
+    conn->thread = (pthread_t *)malloc(sizeof(pthread_t));
 
     fscanf(file, "%d %d %d %d %lf %lf", &conn->p, &conn->lMin, &conn->lMax,
            &conn->w, &conn->tStart, &conn->tEnd);
@@ -44,6 +50,19 @@ packet_t *generatePacket(conn_t *conn, double prevTime,
   packet->startTime = prevTime;
   packet->endTime = prevTime + interArrivalTime;
   return packet;
+}
+
+void *connection(void *arg) {
+  conn_t *conn = (conn_t *)arg;
+  printf("Thread created for connection %d\n", conn->id);
+  pthread_exit(NULL);
+  return NULL;
+}
+
+void *controller(void *arg) {
+  printf("Thread created for controller\n");
+  pthread_exit(NULL);
+  return NULL;
 }
 
 int getRandomNumber(int a, int b) { // range is both inclusive
@@ -75,6 +94,22 @@ int main(int argc, char *argv[]) {
 
   param_t *params = (param_t *)calloc(1, sizeof(param_t));
   conn_list_t *connList = readInputFile(inputFile, params);
+
+  pthread_t *controllerThread = (pthread_t *)malloc(sizeof(pthread_t));
+  if (pthread_create(controllerThread, NULL, controller, NULL) != 0)
+    error("[Thread creation]\n");
+
+  conn_t *conn;
+  for (int i = 0; i < connList->connCount; i++) {
+    conn = connList->conns[i];
+    if (pthread_create(conn->thread, NULL, connection, conn) != 0)
+      error("[Thread creation]\n");
+  }
+
+  for (int i = 0; i < connList->connCount; i++) {
+    conn = connList->conns[i];
+    pthread_join(*conn->thread, NULL);
+  }
 
   return 0;
 }
