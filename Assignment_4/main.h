@@ -1,5 +1,8 @@
 #pragma once
 #include <pthread.h>
+#include <stdbool.h>
+#define MAX_CONNECTIONS 20
+#define TIME_UNIT 0.1
 #define streq(str1, str2, n) (strncmp(str1, str2, n) == 0)
 
 typedef struct Param param_t;
@@ -28,15 +31,17 @@ typedef struct Connection {
   double weight;
   double tStart;
   double tEnd;
-  double *interArrivalTimes;
+  bool active;
   long double finish;
-  pthread_t *thread;
+  pthread_t thread;
 } conn_t;
 
 typedef struct Packet {
+  long long int size;
   double length;
-  double startTime;
-  double endTime;
+  long double genTime;
+  long double startTime;
+  long double endTime;
   long double finish;
   conn_t *conn;
 } packet_t;
@@ -59,3 +64,4 @@ int comparePackets(const void *p1, const void *p2);
 long double getFinishNumber(packet_t *packet);
 void insertPacket(packet_t *packet);
 conn_t *iteratedDeletion();
+void calculateMetrics();
