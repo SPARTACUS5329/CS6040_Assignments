@@ -60,8 +60,11 @@ packet_t *generatePacket(conn_t *conn, double prevTime,
 void *connection(void *arg);
 void *controller(void *arg);
 void *timer(void *arg);
-int comparePackets(const void *p1, const void *p2);
-long double getFinishNumber(packet_t *packet);
-void insertPacket(packet_t *packet);
-conn_t *iteratedDeletion();
+long double getFinishNumber(packet_t *packet, long double roundNumber);
+void insertPacket(packet_queue_t *queue, packet_t *packet);
+conn_t *iteratedDeletion(long double roundNumber);
 void calculateMetrics();
+void heapifyDown(packet_queue_t *queue, int idx);
+void heapifyUp(packet_queue_t *queue, int idx);
+void insertPacket(packet_queue_t *queue, packet_t *packet);
+packet_t *popTopPacket(packet_queue_t *queue);

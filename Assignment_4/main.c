@@ -17,14 +17,13 @@ static long long int totalDroppedPackets[MAX_CONNECTIONS];
 static long long int totalPacketLength[MAX_CONNECTIONS];
 static long long int totalTransmittedLength[MAX_CONNECTIONS];
 static long double linkFraction[MAX_CONNECTIONS];
+static long double totalTransmissionTime[MAX_CONNECTIONS];
 static double packetDelay[MAX_CONNECTIONS];
 
 packet_queue_t *packetQueue;
-long double roundNumber;
 static long double clockTime;
 
 pthread_mutex_t packetQueueMutex;
-pthread_mutex_t roundNumberMutex;
 pthread_mutex_t connListMutex;
 
 conn_list_t *readInputFile(const char *filename, param_t *params) {
@@ -94,7 +93,11 @@ void *connection(void *arg) {
 
     interArrivalTime = getInterArrivalTime(mu);
     packet_t *packet = generatePacket(conn, time, interArrivalTime);
-    insertPacket(packet);
+
+    pthread_mutex_lock(&packetQueueMutex);
+    insertPacket(packetQueue, packet);
+    pthread_mutex_unlock(&packetQueueMutex);
+
     usleep(interArrivalTime * 100); // conversion to micro seconds
   }
 
@@ -103,6 +106,7 @@ void *connection(void *arg) {
 }
 
 void *controller(void *arg) {
+  long double roundNumber = 0;
   int bufferSize = 0;
   long double slopeFactor, prevEventTime, time;
   packet_t *transmittingPacket = NULL;
@@ -126,7 +130,7 @@ void *controller(void *arg) {
         if (packet->finish != 0)
           continue;
 
-        packet->finish = getFinishNumber(packet);
+        packet->finish = getFinishNumber(packet, roundNumber);
         packet->conn->finish = packet->finish;
 
         if (!packet->conn->active) {
@@ -135,8 +139,6 @@ void *controller(void *arg) {
         }
       }
 
-      qsort(packetQueue->packets, packetQueue->size, sizeof(packet_t *),
-            comparePackets);
       bufferSize = packetQueue->size;
     }
 
@@ -148,7 +150,7 @@ void *controller(void *arg) {
       if (packetQueue->size == 0)
         goto release_queue;
 
-      transmittingPacket = packetQueue->packets[0];
+      transmittingPacket = popTopPacket(packetQueue);
       // corner case: queue was empty initially but packet was added in between
       if (transmittingPacket->finish == 0)
         goto release_queue;
@@ -156,11 +158,6 @@ void *controller(void *arg) {
       transmittingPacket->startTime = time;
       transmittingPacket->endTime =
           transmittingPacket->startTime + transmittingPacket->length;
-
-      packetQueue->size--;
-      packetQueue->packets[0] = packetQueue->packets[packetQueue->size];
-      qsort(packetQueue->packets, packetQueue->size, sizeof(packet_t *),
-            comparePackets);
 
       totalTransmittedLength[transmittingPacket->conn->id] +=
           transmittingPacket->size;
@@ -178,16 +175,18 @@ void *controller(void *arg) {
     if (time < transmittingPacket->endTime)
       continue;
 
-    roundNumber += (time - prevEventTime) / slopeFactor;
-    while ((conn = iteratedDeletion()) != NULL) {
-      long double inactiveTime = prevEventTime + conn->finish * slopeFactor;
-      slopeFactor -= conn->weight;
-      prevEventTime = inactiveTime;
-      roundNumber += (time - prevEventTime) / slopeFactor;
-    }
+    // roundNumber += (time - prevEventTime) / slopeFactor;
+    // while ((conn = iteratedDeletion(roundNumber)) != NULL) {
+    // long double inactiveTime = prevEventTime + conn->finish * slopeFactor;
+    // slopeFactor -= conn->weight;
+    // prevEventTime = inactiveTime;
+    // roundNumber += (time - prevEventTime) / slopeFactor;
+    // }
 
     prevEventTime = time;
 
+    totalTransmissionTime[transmittingPacket->conn->id] +=
+        time - transmittingPacket->startTime;
     transmittingPacket = NULL;
   }
 
@@ -195,7 +194,7 @@ void *controller(void *arg) {
   return NULL;
 }
 
-conn_t *iteratedDeletion() {
+conn_t *iteratedDeletion(long double roundNumber) {
   pthread_mutex_lock(&connListMutex);
   for (int i = 0; i < params->N; i++) {
     if (connList->conns[i]->active &&
@@ -210,26 +209,10 @@ conn_t *iteratedDeletion() {
   return NULL;
 }
 
-long double getFinishNumber(packet_t *packet) {
-  pthread_mutex_lock(&roundNumberMutex);
+long double getFinishNumber(packet_t *packet, long double roundNumber) {
   long double finish = fmax(packet->conn->finish, roundNumber) +
                        (long double)packet->length / packet->conn->weight;
-  pthread_mutex_unlock(&roundNumberMutex);
   return finish;
-}
-
-void insertPacket(packet_t *packet) {
-  pthread_mutex_lock(&packetQueueMutex);
-  if (packetQueue->size >= params->B) {
-    totalDroppedPackets[packet->conn->id]++;
-  } else {
-    packetQueue->packets[packetQueue->size++] = packet;
-  }
-  pthread_mutex_unlock(&packetQueueMutex);
-}
-
-int comparePackets(const void *p1, const void *p2) {
-  return ((packet_t *)p1)->finish - ((packet_t *)p2)->finish;
 }
 
 void *timer(void *arg) { // time unit
@@ -254,9 +237,10 @@ void calculateMetrics() {
     printf("%d ", i);
     printf("%lld ", bg);
     printf("%lld ", bt);
-    printf("%Lf ", (long double)bg / bt);
+    printf("%Lf ", (long double)bt / bg);
     printf("%Lf ", linkFraction[i]);
     printf("%lf ", packetDelay[i] / totalPackets[i]);
+    printf("%Lf ", totalTransmissionTime[i] / totalTransmittedPackets[i]);
     printf("%lf ", (double)totalDroppedPackets[i] / totalPackets[i]);
     printf("%lld ", totalTransmittedPackets[i]);
     printf("%lld ", totalPackets[i]);
@@ -329,4 +313,66 @@ int main(int argc, char *argv[]) {
   calculateMetrics();
 
   return 0;
+}
+
+void heapifyDown(packet_queue_t *queue, int index) {
+  packet_t *packet = queue->packets[index];
+  int maxIndex;
+
+  while (1) {
+    int leftChild = 2 * index + 1;
+    int rightChild = 2 * index + 2;
+
+    if (leftChild >= queue->size)
+      break;
+
+    maxIndex = leftChild;
+    if (rightChild < queue->size &&
+        queue->packets[rightChild]->finish > queue->packets[leftChild]->finish)
+      maxIndex = rightChild;
+
+    if (packet->finish >= queue->packets[maxIndex]->finish) {
+      break;
+    }
+
+    queue->packets[index] = queue->packets[maxIndex];
+    index = maxIndex;
+  }
+
+  queue->packets[index] = packet;
+}
+
+void heapifyUp(packet_queue_t *queue, int index) {
+  packet_t *packet = queue->packets[index];
+
+  while (index > 0) {
+    int parent = (index - 1) / 2;
+
+    if (packet->finish <= queue->packets[parent]->finish)
+      break;
+
+    queue->packets[index] = queue->packets[parent];
+    index = parent;
+  }
+
+  queue->packets[index] = packet;
+}
+
+void insertPacket(packet_queue_t *queue, packet_t *packet) {
+  if (queue->size >= params->B) {
+    totalDroppedPackets[packet->conn->id]++;
+    return;
+  }
+
+  queue->packets[queue->size++] = packet;
+  heapifyUp(queue, queue->size - 1);
+}
+
+packet_t *popTopPacket(packet_queue_t *queue) {
+  packet_t *topPacket = queue->packets[0];
+
+  queue->packets[0] = queue->packets[--queue->size];
+  heapifyDown(queue, 0);
+
+  return topPacket;
 }
