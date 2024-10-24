@@ -1,0 +1,4 @@
+clear
+make
+Python3.8 simulate.py
+make clean
