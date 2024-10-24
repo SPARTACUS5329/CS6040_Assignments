@@ -61,18 +61,31 @@ def plot_weights_pie(normalized_weights, title):
     plt.title(title)
     plt.show()
 
+def weighted_jains_fairness_index(weights, link_utilizations):
+    numerator = (sum(w * u for w, u in zip(weights, link_utilizations))) ** 2
+    denominator = sum(weights) * sum(w * u ** 2 for w, u in zip(weights, link_utilizations))
+    return numerator / denominator
+
 if __name__ == "__main__":
-    run_wfq("inputfile8", "outputfile8")
-    run_wfq("inputfile16", "outputfile16")
+    # run_wfq("inputfile8", "outputfile8")
+    # run_wfq("inputfile16", "outputfile16")
 
     normalized_data8 = read_and_normalize_output("outputfile8")
-    plot_link_fraction_pie(normalized_data8, "Normalized Link Fraction (N=8)")
+    # plot_link_fraction_pie(normalized_data8, "Normalized Link Fraction (N=8)")
 
     normalized_data16 = read_and_normalize_output("outputfile16")
-    plot_link_fraction_pie(normalized_data16, "Normalized Link Fraction (N=16)")
+    # plot_link_fraction_pie(normalized_data16, "Normalized Link Fraction (N=16)")
 
     normalized_weights8 = read_and_normalize_weights("inputfile8")
-    plot_weights_pie(normalized_weights8, "Normalized Weights (N=8)")
+    # plot_weights_pie(normalized_weights8, "Normalized Weights (N=8)")
 
     normalized_weights16 = read_and_normalize_weights("inputfile16")
-    plot_weights_pie(normalized_weights16, "Normalized Weights (N=16)")
+    # plot_weights_pie(normalized_weights16, "Normalized Weights (N=16)")
+
+    normalized_data8 = [i[1] for i in normalized_data8]
+    normalized_data16 = [i[1] for i in normalized_data16]
+
+    jainsFairness8 = weighted_jains_fairness_index(normalized_weights8, normalized_data8)
+    jainsFairness16 = weighted_jains_fairness_index(normalized_weights16, normalized_data16)
+    print(f"N = 8 -> fairness = {jainsFairness8}");
+    print(f"N = 16 -> fairness = {jainsFairness16}");

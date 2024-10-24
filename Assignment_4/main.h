@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #define MAX_CONNECTIONS 20
 #define TIME_UNIT 0.1
+#define RFB_INTERVAL 10000
 #define streq(str1, str2, n) (strncmp(str1, str2, n) == 0)
 
 typedef struct Param param_t;

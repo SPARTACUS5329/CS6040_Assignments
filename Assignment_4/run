@@ -1,4 +1,5 @@
 clear
-gcc main.c -o wfq
+make
 ./wfq -in inputfile8 -out outputfile8
-cat outputfile8
+Python3.8 simulate.py
+make clean

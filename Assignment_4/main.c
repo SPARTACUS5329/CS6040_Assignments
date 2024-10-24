@@ -13,6 +13,7 @@ static clock_t simulationStartTime;
 static conn_list_t *connList;
 static long long int totalPackets[MAX_CONNECTIONS];
 static long long int totalTransmittedPackets[MAX_CONNECTIONS];
+static long long int totalRFB[MAX_CONNECTIONS];
 static long long int totalDroppedPackets[MAX_CONNECTIONS];
 static long long int totalPacketLength[MAX_CONNECTIONS];
 static long long int totalTransmittedLength[MAX_CONNECTIONS];
@@ -161,6 +162,7 @@ void *controller(void *arg) {
 
       totalTransmittedLength[transmittingPacket->conn->id] +=
           transmittingPacket->size;
+      totalRFB[transmittingPacket->conn->id] += transmittingPacket->size;
       linkFraction[transmittingPacket->conn->id] += transmittingPacket->length;
       packetDelay[transmittingPacket->conn->id] +=
           transmittingPacket->endTime - transmittingPacket->genTime;
