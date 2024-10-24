@@ -68,3 +68,4 @@ void heapifyDown(packet_queue_t *queue, int idx);
 void heapifyUp(packet_queue_t *queue, int idx);
 void insertPacket(packet_queue_t *queue, packet_t *packet);
 packet_t *popTopPacket(packet_queue_t *queue);
+void calculateMetrics(const char *filename);

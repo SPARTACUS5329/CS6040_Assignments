@@ -175,13 +175,13 @@ void *controller(void *arg) {
     if (time < transmittingPacket->endTime)
       continue;
 
-    // roundNumber += (time - prevEventTime) / slopeFactor;
-    // while ((conn = iteratedDeletion(roundNumber)) != NULL) {
-    // long double inactiveTime = prevEventTime + conn->finish * slopeFactor;
-    // slopeFactor -= conn->weight;
-    // prevEventTime = inactiveTime;
-    // roundNumber += (time - prevEventTime) / slopeFactor;
-    // }
+    roundNumber += (time - prevEventTime) / slopeFactor;
+    while ((conn = iteratedDeletion(roundNumber)) != NULL) {
+      long double inactiveTime = prevEventTime + conn->finish * slopeFactor;
+      slopeFactor -= conn->weight;
+      prevEventTime = inactiveTime;
+      roundNumber += (time - prevEventTime) / slopeFactor;
+    }
 
     prevEventTime = time;
 
@@ -228,9 +228,18 @@ void *timer(void *arg) { // time unit
   pthread_exit(NULL);
 }
 
-void calculateMetrics() {
+void calculateMetrics(const char *filename) {
   long long int bg;
   long long int bt;
+  int totalLinkConsumption = 0;
+
+  for (int i = 0; i < params->N; i++)
+    totalLinkConsumption += linkFraction[i];
+
+  FILE *file = freopen(filename, "w", stdout);
+  if (file == NULL)
+    error("Error opening file");
+
   for (int i = 0; i < params->N; i++) {
     bg = totalPacketLength[i];
     bt = totalTransmittedLength[i];
@@ -238,13 +247,9 @@ void calculateMetrics() {
     printf("%lld ", bg);
     printf("%lld ", bt);
     printf("%Lf ", (long double)bt / bg);
-    printf("%Lf ", linkFraction[i]);
+    printf("%Lf ", linkFraction[i] / totalLinkConsumption);
     printf("%lf ", packetDelay[i] / totalPackets[i]);
-    printf("%Lf ", totalTransmissionTime[i] / totalTransmittedPackets[i]);
     printf("%lf ", (double)totalDroppedPackets[i] / totalPackets[i]);
-    printf("%lld ", totalTransmittedPackets[i]);
-    printf("%lld ", totalPackets[i]);
-    printf("%lld", totalDroppedPackets[i]);
     printf("\n");
   }
 }
@@ -310,7 +315,7 @@ int main(int argc, char *argv[]) {
   if (pthread_join(timerThread, NULL) != 0)
     error("Failed to join timer thread");
 
-  calculateMetrics();
+  calculateMetrics(outputFile);
 
   return 0;
 }

@@ -1,3 +1,4 @@
 clear
 gcc main.c -o wfq
-./wfq -in inputfile -out outputfile
+./wfq -in inputfile8 -out outputfile8
+cat outputfile8
