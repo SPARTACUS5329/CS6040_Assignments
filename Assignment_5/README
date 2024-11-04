@@ -1,0 +1,12 @@
+The following sequence can be used to generate a pair of rules-file and the corresponding input-file.
+
+% make
+% ./rules16 inpfile2 101 100
+% ./inputs inpfile2 outfile2
+
+inpfile2 will have 100 rules with 2 fields. The trie structure will be constructed for this input.
+
+outfile2 will have 300 input field values, for identifying the rule based on the trie structure.
+
+==
+

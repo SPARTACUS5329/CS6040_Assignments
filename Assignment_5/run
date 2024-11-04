@@ -1,0 +1,3 @@
+clear
+gcc main.c -o spt
+./spt -p rules -i ips -o outputfile
