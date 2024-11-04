@@ -1,4 +1,5 @@
 #include "main.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,9 +28,11 @@ rule_t *parseRule(const char *line) {
   rule->f2 = (sub_rule_t *)calloc(1, sizeof(sub_rule_t));
 
   rule->f1->prefixSize = prefix1;
+  rule->f1->rule = rule;
   ipToBinary(ip1, rule->f1->bits);
 
   rule->f2->prefixSize = prefix2;
+  rule->f2->rule = rule;
   ipToBinary(ip2, rule->f2->bits);
 
   return rule;
@@ -46,11 +49,86 @@ rule_list_t *readRules(const char *filename) {
   char line[100];
   rule_t *rule;
 
-  while (fgets(line, sizeof(line), file) && ruleList->ruleCount < MAX_RULES)
-    ruleList->rules[ruleList->ruleCount++] = parseRule(line);
+  while (fgets(line, sizeof(line), file)) {
+    rule = parseRule(line);
+    rule->id = ruleList->ruleCount;
+    ruleList->rules[ruleList->ruleCount++] = rule;
+  }
 
   fclose(file);
   return ruleList;
+}
+
+void addRule(node_t *root, sub_rule_t *subRule) {
+  node_t register *node = root;
+  int register bit;
+  for (int i = 0; i < subRule->prefixSize; i++) {
+    bit = subRule->bits[i];
+    switch (bit) {
+    case 0:
+      if (node->zero == NULL) {
+        node->zero = (node_t *)calloc(1, sizeof(node_t));
+        node->zero->ruleList = (rule_list_t *)calloc(1, sizeof(rule_list_t));
+        node->zero->ruleList->rules =
+            (rule_t **)calloc(MAX_RULES, sizeof(rule_t *));
+      }
+      node = node->zero;
+      break;
+    case 1:
+      if (node->one == NULL) {
+        node->one = (node_t *)calloc(1, sizeof(node_t));
+        node->one->ruleList = (rule_list_t *)calloc(1, sizeof(rule_list_t));
+        node->one->ruleList->rules =
+            (rule_t **)calloc(MAX_RULES, sizeof(rule_t *));
+      }
+      node = node->one;
+      break;
+    default:
+      error("Invalid bit encountered");
+    }
+  }
+
+  node->isPrefix = true;
+  node->ruleList->rules[node->ruleList->ruleCount++] = subRule->rule;
+}
+
+node_t *createSearchTrie(rule_list_t *ruleList, rule_field_e ruleField) {
+  rule_t *rule;
+  node_t *root = (node_t *)calloc(1, sizeof(node_t));
+  root->ruleList = (rule_list_t *)calloc(1, sizeof(rule_list_t));
+  root->ruleList->rules = (rule_t **)calloc(MAX_RULES, sizeof(rule_t *));
+
+  for (int i = 0; i < ruleList->ruleCount; i++) {
+    rule = ruleList->rules[i];
+    switch (ruleField) {
+    case ONE:
+      addRule(root, rule->f1);
+      break;
+    case TWO:
+      addRule(root, rule->f2);
+      break;
+    default:
+      error("Invalid rule field type");
+    }
+  }
+
+  return root;
+}
+
+void createF2Trie(node_t *root, rule_list_t *ruleList) {
+  if (root == NULL)
+    return;
+
+  root->f2Root = createSearchTrie(ruleList, TWO);
+
+  createF2Trie(root->zero, ruleList);
+  createF2Trie(root->one, ruleList);
+}
+
+node_t *createHierarchicalTrie(rule_list_t *ruleList) {
+  node_t *f1Root = createSearchTrie(ruleList, ONE);
+  createF2Trie(f1Root, ruleList);
+  return f1Root;
 }
 
 void error(const char *message) {
@@ -70,6 +148,7 @@ int main(int argc, char *argv[]) {
       sprintf(params->outputFile, "%s", argv[i]);
 
   rule_list_t *ruleList = readRules(params->ruleFile);
+  node_t *f1Root = createHierarchicalTrie(ruleList);
 
   return 0;
 }
