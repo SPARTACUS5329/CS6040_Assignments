@@ -116,14 +116,14 @@ node_t *createSearchTrie(rule_list_t *ruleList, rule_field_e ruleField) {
   return root;
 }
 
-void createF2Trie(node_t *node, rule_list_t *ruleList) {
-  if (node == NULL)
+void createF2Trie(node_t *root, rule_list_t *ruleList) {
+  if (root == NULL)
     return;
 
-  node->f2Root = createSearchTrie(node->ruleList, TWO);
+  root->f2Root = createSearchTrie(ruleList, TWO);
 
-  createF2Trie(node->zero, ruleList);
-  createF2Trie(node->one, ruleList);
+  createF2Trie(root->zero, ruleList);
+  createF2Trie(root->one, ruleList);
 }
 
 node_t *createHierarchicalTrie(rule_list_t *ruleList) {
@@ -137,10 +137,6 @@ ip_t *parseIp(const char *ipStr1, const char *ipStr2) {
   ip->ruleList = (rule_list_t *)calloc(1, sizeof(rule_list_t));
   ip->ruleList->rules = (rule_t **)calloc(MAX_RULES, sizeof(rule_t *));
   ip->length = MAX_PREFIX_LENGTH;
-
-  strcpy(ip->f1, ipStr1);
-  strcpy(ip->f2, ipStr2);
-
   ipToBinary(ipStr1, ip->f1Bits);
   ipToBinary(ipStr2, ip->f2Bits);
   return ip;
@@ -228,12 +224,8 @@ void writeOutput(const char *filename, ip_list_t *ipList) {
   rule_t *rule;
   for (int i = 0; i < ipList->ipCount; i++) {
     ip = ipList->ips[i];
-    printf("%s", ip->f1);
-    printf("\t");
-    printf("%s", ip->f2);
-    printf("\t");
     printf("%d", ip->ruleList->ruleCount);
-    printf("\t");
+    printf(" ");
     for (int j = 0; j < ip->ruleList->ruleCount; j++) {
       rule = ip->ruleList->rules[j];
       printf("%d", rule->id);
@@ -265,10 +257,10 @@ int main(int argc, char *argv[]) {
   node_t *f1Root = createHierarchicalTrie(ruleList);
 
   ip_t *ip;
-  rule_t *rule;
   for (int i = 0; i < ipList->ipCount; i++) {
     ip = ipList->ips[i];
     resolveIP(f1Root, ip);
+    printf("%d\n", ip->ruleList->ruleCount);
   }
 
   writeOutput(params->outputFile, ipList);
