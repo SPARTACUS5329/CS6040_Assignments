@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 param_t *params;
 
@@ -116,14 +117,14 @@ node_t *createSearchTrie(rule_list_t *ruleList, rule_field_e ruleField) {
   return root;
 }
 
-void createF2Trie(node_t *root, rule_list_t *ruleList) {
-  if (root == NULL)
+void createF2Trie(node_t *node, rule_list_t *ruleList) {
+  if (node == NULL)
     return;
 
-  root->f2Root = createSearchTrie(ruleList, TWO);
+  node->f2Root = createSearchTrie(node->ruleList, TWO);
 
-  createF2Trie(root->zero, ruleList);
-  createF2Trie(root->one, ruleList);
+  createF2Trie(node->zero, ruleList);
+  createF2Trie(node->one, ruleList);
 }
 
 node_t *createHierarchicalTrie(rule_list_t *ruleList) {
@@ -137,6 +138,10 @@ ip_t *parseIp(const char *ipStr1, const char *ipStr2) {
   ip->ruleList = (rule_list_t *)calloc(1, sizeof(rule_list_t));
   ip->ruleList->rules = (rule_t **)calloc(MAX_RULES, sizeof(rule_t *));
   ip->length = MAX_PREFIX_LENGTH;
+
+  strcpy(ip->f1, ipStr1);
+  strcpy(ip->f2, ipStr2);
+
   ipToBinary(ipStr1, ip->f1Bits);
   ipToBinary(ipStr2, ip->f2Bits);
   return ip;
@@ -192,6 +197,10 @@ void getApplicableRules(node_t *f2Root, ip_t *ip) {
 }
 
 void resolveIP(node_t *f1Root, ip_t *ip) {
+  clock_t start, end;
+
+  start = clock();
+
   int bit;
   node_t *node = f1Root;
   for (int i = 0; i < ip->length; i++) {
@@ -213,26 +222,45 @@ void resolveIP(node_t *f1Root, ip_t *ip) {
       error("Invalid bit");
     }
   }
+
+  end = clock();
+
+  ip->searchTime = ((double)(end - start)) / CLOCKS_PER_SEC;
 }
 
 void writeOutput(const char *filename, ip_list_t *ipList) {
+  int saved_stdout = dup(fileno(stdout));
   FILE *file = freopen(filename, "w", stdout);
   if (file == NULL)
     error("Error opening file");
 
   ip_t *ip;
   rule_t *rule;
+  double totalSearchTime = 0;
+
   for (int i = 0; i < ipList->ipCount; i++) {
     ip = ipList->ips[i];
+    printf("%s", ip->f1);
+    printf("\t");
+    printf("%s", ip->f2);
+    printf("\t");
     printf("%d", ip->ruleList->ruleCount);
-    printf(" ");
+    printf("\t");
     for (int j = 0; j < ip->ruleList->ruleCount; j++) {
       rule = ip->ruleList->rules[j];
       printf("%d", rule->id);
       printf(" ");
     }
+    printf("%lf", ip->searchTime * 1e6);
     printf("\n");
+    totalSearchTime += ip->searchTime * 1e6;
   }
+
+  fflush(stdout);
+  dup2(saved_stdout, fileno(stdout));
+  close(saved_stdout);
+
+  printf("Average Search Time = %lf µs\n", totalSearchTime / ipList->ipCount);
 }
 
 void error(const char *message) {
@@ -257,10 +285,10 @@ int main(int argc, char *argv[]) {
   node_t *f1Root = createHierarchicalTrie(ruleList);
 
   ip_t *ip;
+  rule_t *rule;
   for (int i = 0; i < ipList->ipCount; i++) {
     ip = ipList->ips[i];
     resolveIP(f1Root, ip);
-    printf("%d\n", ip->ruleList->ruleCount);
   }
 
   writeOutput(params->outputFile, ipList);
