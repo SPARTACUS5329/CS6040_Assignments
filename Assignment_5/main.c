@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 param_t *params;
 
@@ -196,6 +197,10 @@ void getApplicableRules(node_t *f2Root, ip_t *ip) {
 }
 
 void resolveIP(node_t *f1Root, ip_t *ip) {
+  clock_t start, end;
+
+  start = clock();
+
   int bit;
   node_t *node = f1Root;
   for (int i = 0; i < ip->length; i++) {
@@ -217,15 +222,22 @@ void resolveIP(node_t *f1Root, ip_t *ip) {
       error("Invalid bit");
     }
   }
+
+  end = clock();
+
+  ip->searchTime = ((double)(end - start)) / CLOCKS_PER_SEC;
 }
 
 void writeOutput(const char *filename, ip_list_t *ipList) {
+  int saved_stdout = dup(fileno(stdout));
   FILE *file = freopen(filename, "w", stdout);
   if (file == NULL)
     error("Error opening file");
 
   ip_t *ip;
   rule_t *rule;
+  double totalSearchTime = 0;
+
   for (int i = 0; i < ipList->ipCount; i++) {
     ip = ipList->ips[i];
     printf("%s", ip->f1);
@@ -239,8 +251,16 @@ void writeOutput(const char *filename, ip_list_t *ipList) {
       printf("%d", rule->id);
       printf(" ");
     }
+    printf("%lf", ip->searchTime * 1e6);
     printf("\n");
+    totalSearchTime += ip->searchTime * 1e6;
   }
+
+  fflush(stdout);
+  dup2(saved_stdout, fileno(stdout));
+  close(saved_stdout);
+
+  printf("Average Search Time = %lf µs\n", totalSearchTime / ipList->ipCount);
 }
 
 void error(const char *message) {

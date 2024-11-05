@@ -1,7 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #define MAX_FILE_LENGTH 2000
-#define MAX_PREFIX_LENGTH 16
+#define MAX_PREFIX_LENGTH 32
 #define MAX_IP_COUNT 1000000
 #define MAX_IP_LENGTH 32
 #define MAX_RULES 300000
@@ -32,6 +32,7 @@ typedef struct IpList {
 
 typedef struct Ip {
   int length;
+  double searchTime;
   char f1[MAX_IP_STING_LENGTH];
   char f2[MAX_IP_STING_LENGTH];
   int f1Bits[MAX_IP_LENGTH];
